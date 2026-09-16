@@ -1,0 +1,111 @@
+import type { MediaItem, Reel } from "./types";
+import { portrait, video } from "./media";
+import { asAuthor, users } from "./users";
+import { asPageAuthor, pages } from "./pages";
+import { daysAgo, hoursAgo } from "./time";
+
+const clip = (index: number, seed: string, alt: string): MediaItem => ({
+  type: "video",
+  url: video(index),
+  poster: portrait(seed),
+  alt,
+  width: 720,
+  height: 1280,
+});
+
+export const reels: Reel[] = [
+  {
+    id: "r1",
+    author: asAuthor(users.rohan),
+    caption:
+      "Wrist position, frame by frame. Slow it to 0.25x and watch the seam.",
+    video: clip(1, "reel-seam", "Slow motion of a bowler's wrist at release"),
+    audio: { title: "Original audio", artist: "Rohan Iyer" },
+    durationSec: 28,
+    viewCount: 412_000,
+    likeCount: 38_400,
+    commentCount: 1_204,
+    shareCount: 6_310,
+    viewerLiked: false,
+    isFollowingAuthor: true,
+    createdAt: hoursAgo(6),
+  },
+  {
+    id: "r2",
+    author: asAuthor(users.kabir),
+    caption: "Keeper cam. Sound on for the edge at 0:14.",
+    video: clip(3, "reel-keepercam", "Behind the stumps point of view"),
+    audio: { title: "Stadium noise", artist: "Maidan CC" },
+    durationSec: 41,
+    viewCount: 89_500,
+    likeCount: 12_100,
+    commentCount: 388,
+    shareCount: 902,
+    viewerLiked: true,
+    isFollowingAuthor: true,
+    createdAt: hoursAgo(20),
+  },
+  {
+    id: "r3",
+    author: asPageAuthor(pages.pitchReport),
+    caption: "Every dismissal from the morning session in 45 seconds.",
+    video: clip(5, "reel-session", "Highlight reel of wickets"),
+    audio: { title: "Push It", artist: "Static Motion" },
+    durationSec: 45,
+    viewCount: 1_800_000,
+    likeCount: 204_000,
+    commentCount: 8_940,
+    shareCount: 33_100,
+    viewerLiked: false,
+    isFollowingAuthor: true,
+    createdAt: daysAgo(1),
+  },
+  {
+    id: "r4",
+    author: asAuthor(users.priya),
+    caption: "Redesigned our club scorecard. Swipe for the before.",
+    video: clip(6, "reel-scorecard", "Screen recording of a scorecard design"),
+    audio: { title: "Neon Quiet", artist: "Halfmoon" },
+    durationSec: 33,
+    viewCount: 62_800,
+    likeCount: 9_240,
+    commentCount: 211,
+    shareCount: 480,
+    viewerLiked: false,
+    isFollowingAuthor: false,
+    createdAt: daysAgo(2),
+  },
+  {
+    id: "r5",
+    author: asAuthor(users.zoya),
+    caption: "Three warm-ups nobody does and everybody should.",
+    video: clip(7, "reel-warmup", "Warm up routine on the outfield"),
+    audio: { title: "Original audio", artist: "Zoya Ansari" },
+    durationSec: 52,
+    viewCount: 231_000,
+    likeCount: 27_600,
+    commentCount: 745,
+    shareCount: 4_120,
+    viewerLiked: true,
+    isFollowingAuthor: false,
+    createdAt: daysAgo(3),
+  },
+  {
+    id: "r6",
+    author: asAuthor(users.ishaan),
+    caption: "Bowled him with the only good ball I have. Keeping this forever.",
+    video: clip(9, "reel-bowled", "Stumps flying after a delivery"),
+    audio: { title: "Original audio", artist: "Ishaan Verma" },
+    durationSec: 15,
+    viewCount: 18_300,
+    likeCount: 3_410,
+    commentCount: 96,
+    shareCount: 120,
+    viewerLiked: false,
+    isFollowingAuthor: true,
+    createdAt: daysAgo(4),
+  },
+];
+
+export const reelById = (id: string): Reel | undefined =>
+  reels.find((r) => r.id === id);
