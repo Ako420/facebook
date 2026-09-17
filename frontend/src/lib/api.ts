@@ -22,7 +22,7 @@ export const writeToken = (token: string | null) => {
 };
 
 export const api = axios.create({
-  baseURL: "http://localhost:3000/api",
+  baseURL:process.env.VITE_API_URL || "http://localhost:3000/api",
   headers: { "Content-Type": "application/json" },
 });
 
