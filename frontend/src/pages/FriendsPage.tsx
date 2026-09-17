@@ -17,6 +17,7 @@ import {
   toPerson,
 } from "../features/friends/friendApi";
 import type { ApiPerson, FriendEdge } from "../features/friends/friendApi";
+import { useRealtimeEvent } from "../features/realtime/RealtimeProvider";
 
 function Section({
   title,
@@ -80,6 +81,10 @@ export default function FriendsPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useRealtimeEvent("friends:changed", () => {
+    load();
+  });
 
   const confirm = async (edge: FriendEdge) => {
     setIncoming((current) => current.filter((row) => row.id !== edge.id));

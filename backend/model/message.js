@@ -2,6 +2,11 @@ import mongoose from "mongoose";
 
 export const attachment_types = ["image", "video"];
 
+export const CHANGE_WINDOW_MS = 15 * 60 * 1000;
+
+export const withinChangeWindow = (message) =>
+  Date.now() - new Date(message.createdAt).getTime() <= CHANGE_WINDOW_MS;
+
 
 const attachmentSchema = new mongoose.Schema(
   {

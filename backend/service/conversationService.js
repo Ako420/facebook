@@ -4,6 +4,11 @@ import { Message } from "../model/message.js";
 import { User } from "../model/user.js";
 import { ApiError } from "../utils/apiError.js";
 import { isValidObjectId } from "../utils/validators.js";
+import {
+  announceConversationChange,
+  announceRead,
+  announceRemoval,
+} from "./conversationEvents.js";
 
 const USER_FIELDS = "name avatarUrl work friendsCount";
 
@@ -89,6 +94,7 @@ export const startDirectService = async (userId, otherUserId) => {
       { conversationId: existing._id, userId },
       { $set: { hidden: false } },
     );
+    await announceConversationChange(existing._id, [userId]);
     return { conversation: existing, created: false };
   }
 
@@ -112,6 +118,8 @@ export const startDirectService = async (userId, otherUserId) => {
     { conversationId: conversation._id, userId, role: "member" },
     { conversationId: conversation._id, userId: target, role: "member" },
   ]);
+
+  await announceConversationChange(conversation._id);
 
   return { conversation, created: true };
 };
@@ -155,6 +163,8 @@ export const createGroupChatService = async (userId, body) => {
       role: "member",
     })),
   ]);
+
+  await announceConversationChange(conversation._id);
 
   return conversation;
 };
@@ -304,6 +314,7 @@ export const updateConversationService = async (conversationId, userId, body) =>
   if (avatarUrl !== undefined) conversation.avatarUrl = String(avatarUrl).trim();
 
   await conversation.save();
+  await announceConversationChange(conversation._id);
   return conversation;
 };
 
@@ -322,6 +333,8 @@ export const clearConversationService = async (conversationId, userId) => {
   membership.lastReadAt = now;
   await membership.save();
 
+  await announceRemoval(conversation._id, [userId]);
+
   return membership;
 };
 
@@ -332,6 +345,8 @@ export const markReadService = async (conversationId, userId) => {
   membership.unreadCount = 0;
   membership.lastReadAt = new Date();
   await membership.save();
+
+  await announceRead(conversation._id, userId);
 
   return membership;
 };
@@ -393,6 +408,8 @@ export const addParticipantsService = async (conversationId, actorId, userIds) =
     })),
   );
 
+  await announceConversationChange(conversation._id);
+
   return toAdd;
 };
 
@@ -432,6 +449,9 @@ export const leaveConversationService = async (conversationId, userId) => {
   await ConversationMember.deleteOne({ _id: membership._id });
   await rebalanceAfterDeparture(conversation, membership.role);
 
+  await announceRemoval(conversation._id, [userId]);
+  await announceConversationChange(conversation._id);
+
   return membership;
 };
 
@@ -455,6 +475,9 @@ export const removeParticipantService = async (conversationId, actorId, targetId
 
   await ConversationMember.deleteOne({ _id: target._id });
   await rebalanceAfterDeparture(conversation, target.role);
+
+  await announceRemoval(conversation._id, [target.userId]);
+  await announceConversationChange(conversation._id);
 
   return target;
 };

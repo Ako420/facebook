@@ -1,11 +1,16 @@
 import { User } from "../model/user.js";
 import { Friend } from "../model/friend.js";
 import { ApiError } from "../utils/apiError.js";
+import { emitToUsers } from "../lib/realtime.js";
+import { notify, retract } from "./notificationService.js";
 
 
 const USER_FIELDS = "name avatarUrl work friendsCount";
 
 const same = (a, b) => String(a) === String(b);
+
+const announceFriendsChanged = (friend) =>
+  emitToUsers([friend.userId, friend.friendId], "friends:changed", {});
 
 export const getFriendByIdService = async (id) => {
   if (!id) throw ApiError.badRequest("Invalid Friend id");
@@ -104,6 +109,15 @@ export const createFriendService = async (userId, friendId) => {
 
   const friend = new Friend({ userId, friendId });
   await friend.save();
+
+  await notify({
+    recipientId: friendId,
+    actorId: userId,
+    type: "friend-request",
+    friendId: friend._id,
+  });
+  announceFriendsChanged(friend);
+
   return friend;
 };
 
@@ -145,6 +159,21 @@ export const updateFriendStatusService = async (id, status, actorId) => {
     await shiftFriendCounts(friend.userId, friend.friendId, -1);
   }
 
+  if (status !== "pending") {
+    await retract({ type: "friend-request", friendId: friend._id });
+  }
+
+  if (!wasAccepted && status === "accepted") {
+    await notify({
+      recipientId: friend.userId,
+      actorId: friend.friendId,
+      type: "friend-accepted",
+      friendId: friend._id,
+    });
+  }
+
+  announceFriendsChanged(friend);
+
   return friend;
 };
 
@@ -165,6 +194,9 @@ export const deleteFriendService = async (id, actorId) => {
   if (wasAccepted) {
     await shiftFriendCounts(friend.userId, friend.friendId, -1);
   }
+
+  await retract({ friendId: friend._id });
+  announceFriendsChanged(friend);
 
   return friend;
 };

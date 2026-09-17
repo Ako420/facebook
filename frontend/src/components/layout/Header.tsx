@@ -12,6 +12,8 @@ import { AccountMenu } from "./AccountMenu";
 import { ChatsPanel } from "../messages/ChatsPanel";
 import { NewChatModal } from "../messages/NewChatModal";
 import { useMessages } from "../../features/messages/MessagesProvider";
+import { NotificationsPanel } from "../notifications/NotificationsPanel";
+import { useNotifications } from "../../features/notifications/NotificationsProvider";
 
 const tabs: { id: string; label: string; icon: IconName; href: string }[] = [
   { id: "home", label: "Home", icon: "home", href: "/" },
@@ -34,20 +36,29 @@ export function Header() {
   const go = useGo();
   const { user: account } = useAuth();
   const { unread } = useMessages();
+  const { unread: unreadNotifications } = useNotifications();
 
-  const [chatsOpen, setChatsOpen] = useState(false);
+  const [panel, setPanel] = useState<"chats" | "notifications" | null>(null);
   const [composing, setComposing] = useState(false);
   const chats = useRef<HTMLDivElement>(null);
+  const alerts = useRef<HTMLDivElement>(null);
 
-  // Clicking away or pressing Escape closes the chats dropdown.
+  const chatsOpen = panel === "chats";
+  const alertsOpen = panel === "notifications";
+  const closePanel = () => setPanel(null);
+  const togglePanel = (next: "chats" | "notifications") =>
+    setPanel((current) => (current === next ? null : next));
+
+  // Clicking away or pressing Escape closes whichever dropdown is open.
   useEffect(() => {
-    if (!chatsOpen) return;
+    if (!panel) return;
+    const container = panel === "chats" ? chats : alerts;
 
     const onDown = (event: MouseEvent) => {
-      if (!chats.current?.contains(event.target as Node)) setChatsOpen(false);
+      if (!container.current?.contains(event.target as Node)) setPanel(null);
     };
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setChatsOpen(false);
+      if (event.key === "Escape") setPanel(null);
     };
 
     document.addEventListener("mousedown", onDown);
@@ -56,7 +67,7 @@ export function Header() {
       document.removeEventListener("mousedown", onDown);
       window.removeEventListener("keydown", onKey);
     };
-  }, [chatsOpen]);
+  }, [panel]);
 
   const me = {
     id: account?.id ?? currentUser.id,
@@ -127,17 +138,32 @@ export function Header() {
                     label={action.label}
                     badge={unread || undefined}
                     active={chatsOpen || pathname.startsWith("/messages")}
-                    onClick={() => setChatsOpen((value) => !value)}
+                    onClick={() => togglePanel("chats")}
                   />
                   {chatsOpen && (
                     <div className="absolute right-0 z-50 mt-2">
                       <ChatsPanel
-                        onClose={() => setChatsOpen(false)}
+                        onClose={closePanel}
                         onCompose={() => {
-                          setChatsOpen(false);
+                          closePanel();
                           setComposing(true);
                         }}
                       />
+                    </div>
+                  )}
+                </div>
+              ) : action.id === "notifications" ? (
+                <div key={action.id} ref={alerts} className="relative">
+                  <IconButton
+                    name="bell-solid"
+                    label={action.label}
+                    badge={unreadNotifications || undefined}
+                    active={alertsOpen || pathname.startsWith("/notifications")}
+                    onClick={() => togglePanel("notifications")}
+                  />
+                  {alertsOpen && (
+                    <div className="absolute right-0 z-50 mt-2">
+                      <NotificationsPanel onClose={closePanel} />
                     </div>
                   )}
                 </div>

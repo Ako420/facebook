@@ -4,33 +4,8 @@ import {
   listMessagesService,
   sendMessageService,
   unsendMessageService,
-  withinChangeWindow,
 } from '../service/messageService.js';
-
-const publicAuthor = (user) =>
-  user && typeof user === 'object'
-    ? { id: user._id, name: user.name, avatarUrl: user.avatarUrl }
-    : { id: user };
-
-const publicMessage = (message, viewerId) => {
-  const mine = String(message.senderId?._id ?? message.senderId) === String(viewerId);
-  const changeable = mine && !message.deletedAt && withinChangeWindow(message);
-
-  return {
-    id: message._id,
-    conversationId: message.conversationId,
-    text: message.deletedAt ? '' : (message.text ?? ''),
-    attachments: message.deletedAt ? [] : (message.attachments ?? []),
-    replyTo: message.replyTo ?? null,
-    createdAt: message.createdAt,
-    editedAt: message.editedAt ?? null,
-    deleted: Boolean(message.deletedAt),
-    fromViewer: mine,
-    canEdit: changeable,
-    canUnsend: changeable,
-    sender: publicAuthor(message.senderId),
-  };
-};
+import { publicMessage } from '../utils/presenters.js';
 
 /** GET /api/conversations/:id/messages */
 export const listMessages = async (req, res, next) => {

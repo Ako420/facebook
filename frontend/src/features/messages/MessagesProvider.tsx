@@ -12,9 +12,11 @@ import { useNavigate } from "react-router-dom";
 import { listConversations, totalUnread } from "./messageApi";
 import type { ApiConversation } from "./messageApi";
 import { useAuth } from "../auth/AuthContext";
-
+import { useRealtimeEvent, useRealtimeStatus } from "../realtime/RealtimeProvider";
 
 const POLL_MS = 15_000;
+const LIVE_POLL_MS = 60_000;
+const REFRESH_DEBOUNCE_MS = 250;
 
 const ALERTS_KEY = "fb.messageAlerts";
 
@@ -60,6 +62,7 @@ export function MessagesProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const { status } = useAuth();
   const signedIn = status === "authenticated";
+  const live = useRealtimeStatus() === "open";
 
   const [conversations, setConversations] = useState<ApiConversation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -141,7 +144,6 @@ export function MessagesProvider({ children }: { children: ReactNode }) {
     }
 
     refresh();
-    const timer = setInterval(refresh, POLL_MS);
 
     // Coming back to the tab should not wait out the rest of the interval.
     const onVisible = () => {
@@ -149,17 +151,41 @@ export function MessagesProvider({ children }: { children: ReactNode }) {
     };
     document.addEventListener("visibilitychange", onVisible);
 
-    return () => {
-      clearInterval(timer);
-      document.removeEventListener("visibilitychange", onVisible);
-    };
+    return () => document.removeEventListener("visibilitychange", onVisible);
   }, [signedIn, refresh]);
+
+  useEffect(() => {
+    if (!signedIn) return;
+
+    const timer = setInterval(refresh, live ? LIVE_POLL_MS : POLL_MS);
+    return () => clearInterval(timer);
+  }, [signedIn, live, refresh]);
+
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  const scheduleRefresh = useCallback(() => {
+    clearTimeout(refreshTimer.current);
+    refreshTimer.current = setTimeout(refresh, REFRESH_DEBOUNCE_MS);
+  }, [refresh]);
+
+  useEffect(() => () => clearTimeout(refreshTimer.current), []);
+
+  useRealtimeEvent("ready", () => {
+    refresh();
+  });
+  useRealtimeEvent("message:new", scheduleRefresh);
+  useRealtimeEvent("message:updated", scheduleRefresh);
+  useRealtimeEvent("message:hidden", scheduleRefresh);
+  useRealtimeEvent("conversation:updated", scheduleRefresh);
+  useRealtimeEvent("conversation:removed", scheduleRefresh);
 
   const clearUnread = useCallback((id: string) => {
     setConversations((current) =>
       current.map((row) => (row.id === id ? { ...row, unreadCount: 0 } : row)),
     );
   }, []);
+
+  useRealtimeEvent("conversation:read", ({ conversationId }) => clearUnread(conversationId));
 
   const setActiveConversation = useCallback((id: string | null) => {
     activeId.current = id;

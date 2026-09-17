@@ -18,6 +18,7 @@ import {
   removeGroupMember,
 } from "../features/groups/groupApi";
 import type { ApiGroup, ApiGroupInvitation } from "../features/groups/groupApi";
+import { useRealtimeEvent } from "../features/realtime/RealtimeProvider";
 
 function Section({
   title,
@@ -77,6 +78,10 @@ export default function GroupsPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useRealtimeEvent("notification:new", ({ notification }) => {
+    if (notification.type === "group-invite") load(query.trim());
+  });
 
   // Search runs against the discover list, a beat after the typing stops.
   useEffect(() => {

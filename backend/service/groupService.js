@@ -6,6 +6,7 @@ import { ApiError } from "../utils/apiError.js";
 import { atomically, opts } from "../utils/transaction.js";
 import { isValidObjectId } from "../utils/validators.js";
 import { destroyMediaUrls } from "./uploadService.js";
+import { notify, retract } from "./notificationService.js";
 
 const MAX_QUERY = 100;
 
@@ -241,6 +242,10 @@ export const deleteGroupService = async (groupId, userId) => {
     await Group.deleteOne({ _id: group._id }, opts(session));
   });
 
+  await retract({
+    $or: [{ groupId: group._id }, { postId: { $in: posts.map((post) => post._id) } }],
+  });
+
   await destroyMediaUrls(
     posts.flatMap((post) => [...(post.imageUrl || []), ...(post.videoUrl || [])]),
   );
@@ -252,7 +257,7 @@ export const joinGroupService = async (groupId, userId) => {
   const group = await requireGroup(groupId);
 
   try {
-    return await atomically(async (session) => {
+    const joined = await atomically(async (session) => {
       const existing = await membershipOf(group._id, userId, session);
 
       if (existing?.status === "active") {
@@ -282,6 +287,12 @@ export const joinGroupService = async (groupId, userId) => {
 
       return { status };
     });
+
+    if (joined.status === "active") {
+      await retract({ type: "group-invite", groupId: group._id, recipientId: userId });
+    }
+
+    return joined;
   } catch (error) {
     if (!isDuplicate(error)) throw error;
 
@@ -365,6 +376,10 @@ export const inviteMembersService = async (groupId, actorId, userIds) => {
     return { invited, approved, awaitingAdmin };
   });
 
+  for (const id of result.invited) {
+    await notify({ recipientId: id, actorId, type: "group-invite", groupId: group._id });
+  }
+
   if (result.invited.length === 0 && result.approved.length === 0) {
     throw ApiError.conflict(
       result.awaitingAdmin.length > 0
@@ -381,7 +396,7 @@ export const approveMemberService = async (groupId, actorId, targetId) => {
   const group = await requireGroup(groupId);
   requireId(targetId, "user");
 
-  return atomically(async (session) => {
+  const approved = await atomically(async (session) => {
     const row = await inTx(
       GroupMember.findOne({ groupId: group._id, userId: targetId }),
       session,
@@ -406,6 +421,10 @@ export const approveMemberService = async (groupId, actorId, targetId) => {
 
     return row;
   });
+
+  await retract({ type: "group-invite", groupId: group._id, recipientId: targetId });
+
+  return approved;
 };
 
 export const leaveGroupService = async (groupId, userId) => {
@@ -502,7 +521,7 @@ export const removeMemberService = async (groupId, actorId, memberUserId) => {
   const group = await requireGroup(groupId);
   requireId(memberUserId, "user");
 
-  return atomically(async (session) => {
+  const removed = await atomically(async (session) => {
     const row = await inTx(
       GroupMember.findOne({ groupId: group._id, userId: memberUserId }),
       session,
@@ -535,6 +554,12 @@ export const removeMemberService = async (groupId, actorId, memberUserId) => {
     await GroupMember.deleteOne({ _id: row._id }, opts(session));
     return row;
   });
+
+  if (removed.status === "invited") {
+    await retract({ type: "group-invite", groupId: group._id, recipientId: memberUserId });
+  }
+
+  return removed;
 };
 
 

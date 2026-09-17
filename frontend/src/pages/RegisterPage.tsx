@@ -17,8 +17,18 @@ import { useNavigate } from "react-router-dom";
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 const MONTHS = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
 ];
 
 const DAYS = Array.from({ length: 31 }, (_, i) => i + 1);
@@ -65,13 +75,13 @@ const dateOfBirth = (form: FormState) => {
   return `${form.year}-${form.month.padStart(2, "0")}-${form.day.padStart(2, "0")}`;
 };
 
-
 const validate = (form: FormState): FieldErrors => {
   const errors: FieldErrors = {};
   const name = fullName(form);
 
   if (!name) errors.name = "Full name is required.";
-  else if (name.length < 2) errors.name = "Full name must be at least 2 characters.";
+  else if (name.length < 2)
+    errors.name = "Full name must be at least 2 characters.";
 
   if (!dateOfBirth(form)) errors.dateOfBirth = "Date of birth is required.";
 
@@ -89,7 +99,8 @@ const validate = (form: FormState): FieldErrors => {
   else if (form.password.length < 6)
     errors.password = "Password must be at least 6 characters.";
 
-  if (!form.confirmPassword) errors.confirmPassword = "Please confirm your password.";
+  if (!form.confirmPassword)
+    errors.confirmPassword = "Please confirm your password.";
   else if (form.password && form.password !== form.confirmPassword)
     errors.confirmPassword = "Passwords do not match.";
 
@@ -153,7 +164,7 @@ export default function RegisterPage() {
         </button>
 
         <div className="mt-3">
-          {/* <MetaMark /> */}
+          <MetaMark />
         </div>
 
         <h1 className="mt-3 text-2xl font-bold tracking-tight">
@@ -169,7 +180,9 @@ export default function RegisterPage() {
 
           {/* Two inputs here, one `name` field on the server. */}
           <fieldset>
-            <legend className="mb-1.5 text-sm font-semibold text-ink">Name</legend>
+            <legend className="mb-1.5 text-sm font-semibold text-ink">
+              Name
+            </legend>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <TextField
                 id="register-first-name"
@@ -196,7 +209,9 @@ export default function RegisterPage() {
           </fieldset>
 
           <fieldset>
-            <legend className="mb-1.5 text-sm font-semibold text-ink">Birthday</legend>
+            <legend className="mb-1.5 text-sm font-semibold text-ink">
+              Birthday
+            </legend>
             <div className="grid grid-cols-3 gap-3">
               <SelectField
                 id="register-month"
@@ -322,7 +337,11 @@ export default function RegisterPage() {
             <span className="text-brand">Cookies Policy</span>.
           </p>
 
-          <AuthButton type="submit" pending={pending} pendingLabel="Creating account…">
+          <AuthButton
+            type="submit"
+            pending={pending}
+            pendingLabel="Creating account…"
+          >
             Submit
           </AuthButton>
         </form>

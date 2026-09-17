@@ -399,6 +399,50 @@ export const schemas = {
     },
   },
 
+  Notification: {
+    type: 'object',
+    description:
+      'Something that happened to you. The client words it from `type`; `post`, `comment` '
+      + 'and `group` are filled in for the types that have one, and are null when that thing '
+      + 'has since been deleted.',
+    properties: {
+      id: { type: 'string' },
+      type: {
+        type: 'string',
+        enum: ['friend-request', 'friend-accepted', 'comment', 'reaction', 'group-invite'],
+      },
+      actor: { $ref: '#/components/schemas/Author' },
+      post: {
+        type: 'object',
+        nullable: true,
+        properties: {
+          id: { type: 'string' },
+          type: { type: 'string', enum: ['post', 'reel'] },
+          groupId: { type: 'string', nullable: true },
+        },
+      },
+      comment: {
+        type: 'object',
+        nullable: true,
+        properties: {
+          id: { type: 'string' },
+          preview: { type: 'string', example: 'Great shot!' },
+        },
+      },
+      group: {
+        type: 'object',
+        nullable: true,
+        properties: {
+          id: { type: 'string' },
+          name: { type: 'string', example: 'Weekend football' },
+        },
+      },
+      createdAt: { type: 'string', format: 'date-time' },
+      readAt: { type: 'string', format: 'date-time', nullable: true },
+      isRead: { type: 'boolean' },
+    },
+  },
+
   UploadedMedia: {
     type: 'object',
     properties: {

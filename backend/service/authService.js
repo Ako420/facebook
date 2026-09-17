@@ -1,5 +1,6 @@
 import { User } from '../model/user.js';
 import { ApiError } from '../utils/apiError.js';
+import { CLOSE, disconnectUser } from '../lib/realtime.js';
 import {
   isValidObjectId,
   validateRegistration,
@@ -192,6 +193,8 @@ export const deleteUserAccount = async (userId, body) => {
 
   user.status = 'inactive';
   await user.save();
+
+  disconnectUser(user._id, CLOSE.ACCOUNT_CLOSED, 'This account has been deactivated.');
 
   return user;
 };

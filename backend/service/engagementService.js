@@ -1,6 +1,7 @@
 import { Post } from "../model/post.js";
 import { Comment } from "../model/comment.js";
 import { ApiError } from "../utils/apiError.js";
+import { notify, retract } from "./notificationService.js";
 
 /* ---- Comments ------------------------------------------------------------ */
 
@@ -23,6 +24,14 @@ export const createCommentService = async (postId, userId, commentText) => {
   post.commentCount = (post.commentCount || 0) + 1;
   await post.save();
 
+  await notify({
+    recipientId: post.userId,
+    actorId: userId,
+    type: "comment",
+    postId: post._id,
+    commentId: comment._id,
+  });
+
   await comment.populate("userId", "name avatarUrl");
   return comment;
 };
@@ -39,6 +48,7 @@ export const deleteCommentService = async (commentId, userId) => {
   }
 
   await comment.deleteOne();
+  await retract({ commentId: comment._id });
 
   const post = await Post.findByIdAndUpdate(
     comment.postId,
@@ -110,6 +120,15 @@ export const setReactionService = async (postId, userId, rawType) => {
   post.likeCount = post.reaction.length;
   await post.save();
 
+  if (!existing) {
+    await notify({
+      recipientId: post.userId,
+      actorId: userId,
+      type: "reaction",
+      postId: post._id,
+    });
+  }
+
   return summarizeReactions(post, userId);
 };
 
@@ -126,6 +145,8 @@ export const removeReactionService = async (postId, userId) => {
 
   post.likeCount = post.reaction.length;
   await post.save();
+
+  await retract({ type: "reaction", postId: post._id, actorId: userId });
 
   return summarizeReactions(post, userId);
 };

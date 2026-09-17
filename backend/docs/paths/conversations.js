@@ -98,8 +98,8 @@ export const conversationPaths = {
       tags: ['Messages'],
       summary: 'Unread totals for the message badge',
       description:
-        'One small call the header can poll: how many chats are unread, and how many '
-        + 'messages that adds up to.',
+        'How many chats are unread, and how many messages that adds up to. Clients on the '
+        + 'realtime socket refetch this after reconnecting instead of polling it.',
       responses: {
         200: ok('Your unread totals.', {
           type: 'object',
@@ -210,8 +210,9 @@ export const conversationPaths = {
         'Newest message first. To page backwards through the history, pass the `nextCursor` '
         + 'from the previous call as `before`; a null `nextCursor` means you have reached the '
         + 'start of the thread.\n\n'
-        + 'There is no realtime push yet — poll this endpoint (or `/conversations/unread`) '
-        + 'while a thread is open.',
+        + 'New, edited and unsent messages are pushed over the `/ws` socket as `message:new` '
+        + 'and `message:updated`, in this same shape. Call this again after reconnecting to '
+        + 'pick up anything sent while the socket was down.',
       parameters: [
         { name: 'limit', in: 'query', schema: { type: 'integer', default: 30, maximum: 100 } },
         {

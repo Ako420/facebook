@@ -23,12 +23,19 @@ import {
 } from "../../features/messages/messageApi";
 import type { ApiConversation, ApiMessage } from "../../features/messages/messageApi";
 import { useMessages } from "../../features/messages/MessagesProvider";
+import { useRealtimeEvent } from "../../features/realtime/RealtimeProvider";
 
 type Removal = { message: ApiMessage; scope: "me" | "everyone" };
 
 /** Newest-last, which is the order a thread reads in. */
 const chronological = (rows: ApiMessage[]) =>
   [...rows].sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+
+const mergeMessages = (current: ApiMessage[], incoming: ApiMessage[]) => {
+  const byId = new Map(current.map((row) => [row.id, row]));
+  for (const row of incoming) byId.set(row.id, row);
+  return chronological([...byId.values()]);
+};
 
 function Attachment({ media }: { media: UploadedMedia }) {
   if (media.type === "video") {
@@ -264,6 +271,54 @@ export function MessageThread({ conversationId }: { conversationId: string }) {
     };
   }, [newestSeen, conversationId, messages, loading, clearUnread]);
 
+  const markSeen = useCallback(() => {
+    markConversationRead(conversationId).catch(() => undefined);
+    clearUnread(conversationId);
+  }, [conversationId, clearUnread]);
+
+  useRealtimeEvent("message:new", ({ conversationId: chatId, message }) => {
+    if (chatId !== conversationId) return;
+
+    setMessages((current) => mergeMessages(current, [message]));
+
+    if (!message.fromViewer) markSeen();
+  });
+
+  useRealtimeEvent("message:updated", ({ conversationId: chatId, message }) => {
+    if (chatId !== conversationId) return;
+
+    setMessages((current) =>
+      current.some((row) => row.id === message.id) ? mergeMessages(current, [message]) : current,
+    );
+  });
+
+  useRealtimeEvent("message:hidden", ({ conversationId: chatId, messageId }) => {
+    if (chatId !== conversationId) return;
+    setMessages((current) => current.filter((row) => row.id !== messageId));
+  });
+
+  useRealtimeEvent("conversation:updated", ({ conversationId: chatId }) => {
+    if (chatId !== conversationId) return;
+    fetchConversation(conversationId)
+      .then(setConversation)
+      .catch(() => undefined);
+  });
+
+  useRealtimeEvent("conversation:removed", ({ conversationId: chatId }) => {
+    if (chatId !== conversationId) return;
+    setConversation(null);
+    setMessages([]);
+    setError("You are no longer in this chat, or you deleted it.");
+  });
+
+  useRealtimeEvent("ready", () => {
+    if (loading) return;
+
+    listMessages(conversationId, { limit: 30 })
+      .then((page) => setMessages((current) => mergeMessages(current, page.messages)))
+      .catch(() => undefined);
+  });
+
   const loadOlder = async () => {
     if (!cursor) return;
 
@@ -296,7 +351,7 @@ export function MessageThread({ conversationId }: { conversationId: string }) {
           ...(trimmed ? { text: trimmed } : {}),
           ...(attachments ? { attachments } : {}),
         });
-        setMessages((current) => chronological([...current, sent]));
+        setMessages((current) => mergeMessages(current, [sent]));
       }
 
       setText("");

@@ -6,6 +6,7 @@ export const paths = {
   friends: "/friends",
   groups: "/groups",
   messages: "/messages",
+  notifications: "/notifications",
   chat: (id: string) => `/messages/${id}`,
   group: (id: string) => `/groups/${id}`,
   login: "/login",
@@ -19,6 +20,7 @@ export function isRoutable(href: string): boolean {
     href === "/" ||
     href === "/reels" ||
     href === "/friends" ||
+    href === "/notifications" ||
     href === "/login" ||
     href === "/register" ||
     href.startsWith("/profile") ||

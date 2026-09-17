@@ -9,34 +9,38 @@ const extractToken = (req) => {
   return null;
 };
 
+export const authenticateToken = async (token) => {
+  if (!token) {
+    throw ApiError.unauthorized('Please log in to continue.');
+  }
+
+  let payload;
+  try {
+    payload = verifyToken(token);
+  } catch (error) {
+    if (error instanceof jwt.TokenExpiredError) {
+      throw ApiError.unauthorized('Your session has expired. Please log in again.');
+    }
+    throw ApiError.unauthorized('Invalid authentication token.');
+  }
+
+  const user = await User.findById(payload.sub);
+  if (!user) {
+    throw ApiError.unauthorized('This account no longer exists. Please log in again.');
+  }
+
+  // A token issued before deactivation must stop working straight away.
+  if (user.status === 'inactive') {
+    throw ApiError.unauthorized('This account has been deactivated.');
+  }
+
+  return { user, payload };
+};
+
 export const protect = async (req, res, next) => {
   try {
-    const token = extractToken(req);
-    if (!token) {
-      throw ApiError.unauthorized('Please log in to continue.');
-    }
+    const { user } = await authenticateToken(extractToken(req));
 
-    let payload;
-    try {
-      payload = verifyToken(token);
-    } catch (error) {
-      if (error instanceof jwt.TokenExpiredError) {
-        throw ApiError.unauthorized('Your session has expired. Please log in again.');
-      }
-      throw ApiError.unauthorized('Invalid authentication token.');
-    }
-
-  
-    const user = await User.findById(payload.sub);
-    if (!user) {
-      throw ApiError.unauthorized('This account no longer exists. Please log in again.');
-    }
-
-    // A token issued before deactivation must stop working straight away.
-    if (user.status === 'inactive') {
-      throw ApiError.unauthorized('This account has been deactivated.');
-    }
-    
     req.user = user;
     req.userId = user._id;
     next();

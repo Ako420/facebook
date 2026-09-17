@@ -1,4 +1,9 @@
-import { attachment_types, Message } from "../model/message.js";
+import {
+  attachment_types,
+  CHANGE_WINDOW_MS,
+  Message,
+  withinChangeWindow,
+} from "../model/message.js";
 import { ApiError } from "../utils/apiError.js";
 import { isValidObjectId } from "../utils/validators.js";
 import { claimUploads, destroyMedia } from "./uploadService.js";
@@ -7,17 +12,16 @@ import {
   requireConversationAccess,
   touchConversation,
 } from "./conversationService.js";
+import {
+  announceMessageChange,
+  announceMessageHidden,
+  announceNewMessage,
+} from "./conversationEvents.js";
 
 const MAX_ATTACHMENTS = 10;
 const MAX_TEXT = 5000;
 
-export const CHANGE_WINDOW_MS = 15 * 60 * 1000;
-
 const same = (a, b) => String(a) === String(b);
-
-//use to check if user can still edit messagge
-export const withinChangeWindow = (message) =>
-  Date.now() - new Date(message.createdAt).getTime() <= CHANGE_WINDOW_MS;
 
 const requireWindow = (message, verb) => {
   if (!withinChangeWindow(message)) {
@@ -145,6 +149,7 @@ export const sendMessageService = async (conversationId, userId, body) => {
 
   await touchConversation(conversation, message);
   await claimUploads(media, userId);
+  await announceNewMessage(conversation._id, message);
 
   return message;
 };
@@ -188,6 +193,7 @@ export const editMessageService = async (conversationId, messageId, userId, body
   await message.save();
 
   await refreshLastMessage(conversation._id);
+  await announceMessageChange(conversation._id, message);
 
   return message;
 };
@@ -207,6 +213,7 @@ export const unsendMessageService = async (conversationId, messageId, userId) =>
   await message.save();
 
   await refreshLastMessage(conversation._id);
+  await announceMessageChange(conversation._id, message);
 
   await destroyMedia(files);
 
@@ -226,6 +233,7 @@ export const hideMessageService = async (conversationId, messageId, userId) => {
   if (!message) throw ApiError.notFound("Message not found.");
 
   await Message.updateOne({ _id: message._id }, { $addToSet: { hiddenFor: userId } });
+  await announceMessageHidden(conversation._id, message._id, userId);
 
   return message;
 };

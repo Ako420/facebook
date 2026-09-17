@@ -55,7 +55,7 @@ export default function LoginPage() {
     <div className="flex min-h-dvh flex-col bg-canvas text-ink">
       <main className="mx-auto grid w-full max-w-6xl flex-1 grid-cols-1 gap-8 px-4 py-6 lg:grid-cols-2 lg:gap-0 lg:px-8">
         {/* Brand half */}
-        <section className="sm:flex flex-col lg:pr-12 hidden">
+        <section className="sm:flex flex-col lg:pr-12 hidden  lg:flex">
           <div className="grid size-11 place-items-center rounded-pill bg-brand text-white">
             <Icon name="facebook" size={24} />
           </div>
@@ -76,7 +76,7 @@ export default function LoginPage() {
         </section>
 
         {/* Form half */}
-        <section className="flex items-start justify-center lg:border-l lg:border-line lg:pt-6 lg:pl-12">
+        <section className="flex items-center justify-center lg:border-l lg:border-line lg:pt-6 lg:pl-12">
           <div className="w-full max-w-[400px]">
             <div className="mb-6 flex items-center gap-4">
               <button
@@ -142,7 +142,7 @@ export default function LoginPage() {
         </section>
       </main>
 
-      <AuthFooter />
+    <AuthFooter />
     </div>
   );
 }

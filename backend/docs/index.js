@@ -7,6 +7,7 @@ import { groupPaths } from './paths/groups.js';
 import { conversationPaths } from './paths/conversations.js';
 import { storyPaths } from './paths/stories.js';
 import { uploadPaths } from './paths/upload.js';
+import { notificationPaths } from './paths/notifications.js';
 
 /**
  * The whole OpenAPI document. Everything lives here and under ./paths, so the
@@ -25,8 +26,15 @@ export const swaggerSpec = {
       + 'and login needs it.\n\n'
       + '**Reels are posts.** A reel is a post with `type: "reel"` and exactly one video, so posts '
       + 'and reels share the same endpoints, including comments and reactions.\n\n'
-      + '**Messages have no realtime channel yet.** Poll `GET /conversations/unread` for the '
-      + 'badge and `GET /conversations/{id}/messages` while a thread is open.\n\n'
+      + '**Realtime.** Open a WebSocket to `ws://localhost:3000/ws` and send '
+      + '`{ "type": "auth", "token": "<jwt>" }` as the first frame; the server answers '
+      + '`{ "type": "ready" }`. From then on it pushes `{ type, data }` events: '
+      + '`message:new`, `message:updated`, `message:hidden`, `conversation:read`, '
+      + '`conversation:updated`, `conversation:removed`, `notification:new`, '
+      + '`notification:read`, `notification:removed` and `friends:changed`. The socket only '
+      + 'carries news — every write still goes through these REST routes — so refetch over '
+      + 'REST after reconnecting. Close codes: 4001 bad or expired token, 4002 no auth frame '
+      + 'within 5 seconds, 4003 account deactivated.\n\n'
       + '**Rate limits:** `/api/auth/*` allows 20 requests per 15 minutes per IP; everything else '
       + 'allows 500.',
   },
@@ -38,7 +46,8 @@ export const swaggerSpec = {
     { name: 'Comments', description: 'Comments on a post or reel' },
     { name: 'Friends', description: 'Requests, friends and suggestions' },
     { name: 'Groups', description: 'Create, join and manage groups' },
-    { name: 'Messages', description: 'Direct and group chats. No realtime push yet — poll.' },
+    { name: 'Messages', description: 'Direct and group chats. New messages are pushed over /ws.' },
+    { name: 'Notifications', description: 'Friend requests, comments, reactions, group invites' },
     { name: 'Stories', description: 'Photos, videos and text that lapse after 24 hours' },
     { name: 'Upload', description: 'Send images and videos to Cloudinary' },
   ],
@@ -53,5 +62,6 @@ export const swaggerSpec = {
     ...conversationPaths,
     ...storyPaths,
     ...uploadPaths,
+    ...notificationPaths,
   },
 };

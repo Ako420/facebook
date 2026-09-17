@@ -2,6 +2,7 @@ import { Post } from "../model/post.js";
 import { ApiError } from "../utils/apiError.js";
 import { assertCanPostInGroup, assertCanReadGroup } from "./groupService.js";
 import { claimUploads, destroyMediaUrls } from "./uploadService.js";
+import { retract } from "./notificationService.js";
 
 const toNumber = (value) =>
   value === undefined || value === null || value === "" ? undefined : Number(value);
@@ -109,6 +110,7 @@ export const deletePost = async (id, ownerId) => {
   }
 
   await post.deleteOne();
+  await retract({ postId: post._id });
 
   // The post is gone either way; a provider that is down must not undo that.
   await destroyMediaUrls([...(post.imageUrl || []), ...(post.videoUrl || [])]);

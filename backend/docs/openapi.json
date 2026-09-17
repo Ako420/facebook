@@ -3,7 +3,7 @@
   "info": {
     "title": "Facebook Clone API",
     "version": "1.0.0",
-    "description": "REST API for the Facebook clone: accounts, posts, reels, reactions, comments and friends.\n\n**Signing in:** call `POST /auth/register` or `POST /auth/login`, copy the `token` from the response, then press **Authorize** above and paste it. Every route except register and login needs it.\n\n**Reels are posts.** A reel is a post with `type: \"reel\"` and exactly one video, so posts and reels share the same endpoints, including comments and reactions.\n\n**Rate limits:** `/api/auth/*` allows 20 requests per 15 minutes per IP; everything else allows 500."
+    "description": "REST API for the Facebook clone: accounts, posts, reels, reactions, comments, friends, groups, messages and stories.\n\n**Signing in:** call `POST /auth/register` or `POST /auth/login`, copy the `token` from the response, then press **Authorize** above and paste it. Every route except register and login needs it.\n\n**Reels are posts.** A reel is a post with `type: \"reel\"` and exactly one video, so posts and reels share the same endpoints, including comments and reactions.\n\n**Realtime.** Open a WebSocket to `ws://localhost:3000/ws` and send `{ \"type\": \"auth\", \"token\": \"<jwt>\" }` as the first frame; the server answers `{ \"type\": \"ready\" }`. From then on it pushes `{ type, data }` events: `message:new`, `message:updated`, `message:hidden`, `conversation:read`, `conversation:updated`, `conversation:removed`, `notification:new`, `notification:read`, `notification:removed` and `friends:changed`. The socket only carries news — every write still goes through these REST routes — so refetch over REST after reconnecting. Close codes: 4001 bad or expired token, 4002 no auth frame within 5 seconds, 4003 account deactivated.\n\n**Rate limits:** `/api/auth/*` allows 20 requests per 15 minutes per IP; everything else allows 500."
   },
   "servers": [
     {
@@ -35,6 +35,18 @@
     {
       "name": "Groups",
       "description": "Create, join and manage groups"
+    },
+    {
+      "name": "Messages",
+      "description": "Direct and group chats. New messages are pushed over /ws."
+    },
+    {
+      "name": "Notifications",
+      "description": "Friend requests, comments, reactions, group invites"
+    },
+    {
+      "name": "Stories",
+      "description": "Photos, videos and text that lapse after 24 hours"
     },
     {
       "name": "Upload",
@@ -370,7 +382,13 @@
             "format": "date-time"
           },
           "createdBy": {
-            "$ref": "#/components/schemas/Person"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Person"
+              }
+            ],
+            "nullable": true,
+            "description": "Null on a private group you are not in — the group is findable, but who is in it is not."
           },
           "viewerRole": {
             "type": "string",
@@ -382,8 +400,23 @@
             ],
             "description": "The caller's role, or null when they are not a member."
           },
+          "viewerStatus": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "active",
+              "invited",
+              "requested",
+              null
+            ],
+            "description": "Where the caller stands with this group: in it, invited and yet to answer, waiting on an admin, or nothing at all."
+          },
           "isMember": {
             "type": "boolean"
+          },
+          "canRead": {
+            "type": "boolean",
+            "description": "False for a private group you are not in: its posts and its member list answer 403. The fields above are still yours to render."
           }
         }
       },
@@ -401,12 +434,376 @@
               "member"
             ]
           },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "invited",
+              "requested"
+            ],
+            "description": "In the group, asked in, or asking to come in."
+          },
+          "joinedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the row was made — the invite or request date while pending."
+          },
+          "user": {
+            "$ref": "#/components/schemas/Person"
+          },
+          "invitedBy": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Person"
+              }
+            ],
+            "nullable": true,
+            "description": "Who sent the invitation, on an invited row."
+          }
+        }
+      },
+      "GroupInvitation": {
+        "type": "object",
+        "description": "A group waiting on your answer.",
+        "properties": {
+          "group": {
+            "$ref": "#/components/schemas/Group"
+          },
+          "invitedBy": {
+            "$ref": "#/components/schemas/Person"
+          },
+          "invitedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ConversationParticipant": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Participation id."
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "member"
+            ],
+            "description": "Only meaningful in a group chat."
+          },
           "joinedAt": {
             "type": "string",
             "format": "date-time"
           },
+          "lastReadAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "How far this person has read — use it to show read receipts."
+          },
           "user": {
             "$ref": "#/components/schemas/Person"
+          }
+        }
+      },
+      "Conversation": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "direct",
+              "group"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "description": "What to show in the inbox: the group name, or the other person’s name in a direct chat.",
+            "example": "Peter Sesay"
+          },
+          "avatarUrl": {
+            "type": "string",
+            "nullable": true,
+            "description": "The group picture, or the other person’s avatar."
+          },
+          "name": {
+            "type": "string",
+            "description": "The stored group name; empty for direct chats."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastMessageAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "What the inbox is sorted by."
+          },
+          "lastMessage": {
+            "type": "object",
+            "nullable": true,
+            "description": "The preview line under the title.",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "preview": {
+                "type": "string",
+                "example": "On my way."
+              },
+              "sentAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "senderId": {
+                "type": "string"
+              },
+              "fromViewer": {
+                "type": "boolean",
+                "description": "True when you sent it."
+              }
+            }
+          },
+          "unreadCount": {
+            "type": "integer",
+            "example": 2
+          },
+          "viewerRole": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "admin",
+              "member",
+              null
+            ],
+            "description": "Your role in a group chat."
+          },
+          "participants": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConversationParticipant"
+            }
+          }
+        }
+      },
+      "Message": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "conversationId": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string",
+            "example": "On my way."
+          },
+          "attachments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UploadedMedia"
+            }
+          },
+          "replyTo": {
+            "type": "string",
+            "nullable": true,
+            "description": "The id of the message this one answers."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "editedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Set once the sender edits it."
+          },
+          "deleted": {
+            "type": "boolean",
+            "description": "True for an unsent message. It keeps its place in the thread with empty text, so the client can render \"Message unsent\"."
+          },
+          "fromViewer": {
+            "type": "boolean",
+            "description": "True when you sent it."
+          },
+          "canEdit": {
+            "type": "boolean",
+            "description": "Yours, still standing, and inside the 15-minute window. The client shows the Edit control on this rather than keeping its own clock."
+          },
+          "canUnsend": {
+            "type": "boolean",
+            "description": "The same rule, for Remove for everyone."
+          },
+          "sender": {
+            "$ref": "#/components/schemas/Author"
+          }
+        }
+      },
+      "Story": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "image",
+              "video",
+              "text"
+            ],
+            "description": "A text story carries no media and usually a background."
+          },
+          "text": {
+            "type": "string",
+            "description": "The caption on media, or the whole story without it.",
+            "example": "Sunset over an empty stadium"
+          },
+          "background": {
+            "type": "string",
+            "nullable": true,
+            "description": "Text stories only: a CSS background for the client to paint."
+          },
+          "media": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UploadedMedia"
+              }
+            ],
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "24 hours after it went up. Past this it stops being readable."
+          },
+          "seen": {
+            "type": "boolean",
+            "description": "Whether the caller has already watched it."
+          },
+          "viewCount": {
+            "type": "integer",
+            "description": "Your own stories only — absent on everyone else's.",
+            "example": 12
+          }
+        }
+      },
+      "StoryGroup": {
+        "type": "object",
+        "description": "One person's live stories, which is how the rail renders them.",
+        "properties": {
+          "author": {
+            "$ref": "#/components/schemas/Author"
+          },
+          "isViewer": {
+            "type": "boolean",
+            "description": "True on your own group, which sorts first."
+          },
+          "hasUnseen": {
+            "type": "boolean",
+            "description": "What the highlighted ring in the rail keys off."
+          },
+          "latestAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "items": {
+            "type": "array",
+            "description": "Oldest first — the order they play in.",
+            "items": {
+              "$ref": "#/components/schemas/Story"
+            }
+          }
+        }
+      },
+      "Notification": {
+        "type": "object",
+        "description": "Something that happened to you. The client words it from `type`; `post`, `comment` and `group` are filled in for the types that have one, and are null when that thing has since been deleted.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "friend-request",
+              "friend-accepted",
+              "comment",
+              "reaction",
+              "group-invite"
+            ]
+          },
+          "actor": {
+            "$ref": "#/components/schemas/Author"
+          },
+          "post": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "post",
+                  "reel"
+                ]
+              },
+              "groupId": {
+                "type": "string",
+                "nullable": true
+              }
+            }
+          },
+          "comment": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "preview": {
+                "type": "string",
+                "example": "Great shot!"
+              }
+            }
+          },
+          "group": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string",
+                "example": "Weekend football"
+              }
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "readAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "isRead": {
+            "type": "boolean"
           }
         }
       },
@@ -1221,6 +1618,7 @@
           "Posts"
         ],
         "summary": "Delete your own post or reel",
+        "description": "Any photo or video on it is deleted from Cloudinary at the same time, so the file stops being served rather than living on at its URL. Media that did not come from this account is left alone. A provider failure is logged and does not undo the delete.",
         "parameters": [
           {
             "name": "id",
@@ -1813,7 +2211,7 @@
           "Groups"
         ],
         "summary": "Discover groups, or list your own",
-        "description": "By default returns public groups you have **not** joined, busiest first. Pass `mine=true` for the groups you belong to, including private ones.",
+        "description": "By default returns groups you are **not** in, busiest first. Private groups appear too: you cannot read one, but you have to be able to find it before you can ask to join, so each carries `canRead: false` and a `viewerStatus` of `\"requested\"` once you have asked.\n\nGroups that have invited you are left out; they are under `GET /groups/invitations`. Pass `mine=true` for the groups you belong to.",
         "parameters": [
           {
             "name": "mine",
@@ -1955,7 +2353,7 @@
           "Groups"
         ],
         "summary": "Get one group",
-        "description": "A private group returns 404 unless you are a member, so its existence is not leaked.",
+        "description": "Anyone signed in can read a group card: name, cover, description and member count. On a private group you are not in, `canRead` is false and `createdBy` is null, its posts and member list are closed, and `viewerStatus` says whether you have already asked to join.",
         "responses": {
           "200": {
             "description": "The group.",
@@ -1988,7 +2386,7 @@
           "Groups"
         ],
         "summary": "Edit a group",
-        "description": "Admins only.",
+        "description": "Admins only. Switching a private group to **public** lets everyone with a pending join request in at the same time — the only thing their request was waiting on was the group being private.",
         "requestBody": {
           "required": true,
           "content": {
@@ -2069,7 +2467,7 @@
           "Groups"
         ],
         "summary": "Delete a group",
-        "description": "Admins only. Removes the group, every membership and every post in it.",
+        "description": "Admins only. Removes the group, every membership and every post in it, along with any photos and videos those posts carried on Cloudinary.",
         "responses": {
           "200": {
             "description": "Group deleted.",
@@ -2125,9 +2523,23 @@
         "tags": [
           "Groups"
         ],
-        "summary": "List the members",
-        "description": "Admins first. A private group is members-only.",
+        "summary": "List the members, the invitations or the requests",
+        "description": "Admins first. The member list of a private group is members-only.\n\n`status=invited` returns people who have been asked in and have not answered, which any member may look at. `status=requested` returns the join requests waiting on an admin, and only an admin may look at those.",
         "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "active",
+                "invited",
+                "requested"
+              ],
+              "default": "active"
+            },
+            "description": "Which rows to return."
+          },
           {
             "name": "limit",
             "in": "query",
@@ -2169,11 +2581,11 @@
         "tags": [
           "Groups"
         ],
-        "summary": "Join a group",
-        "description": "Public groups only — a private group returns 403.",
+        "summary": "Join a group, or ask to join a private one",
+        "description": "A public group lets you straight in. A private one files a request for its admins to answer. If the group had already invited you, this accepts that invitation, and a request left over from when a now-public group was private is simply let in. Read `status` in the reply to know which happened.\n\nTwo joins for the same person at once cannot both succeed — the database keeps one and the other answers 409.",
         "responses": {
           "201": {
-            "description": "You joined.",
+            "description": "You are in, or your request was filed.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2182,6 +2594,14 @@
                     "message": {
                       "type": "string",
                       "example": "You joined the group."
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "active",
+                        "requested"
+                      ],
+                      "description": "active means you are in; requested means an admin has to answer."
                     }
                   }
                 }
@@ -2191,31 +2611,18 @@
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
-          "403": {
-            "description": "The group is private.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                },
-                "example": {
-                  "message": "This group is private."
-                }
-              }
-            }
-          },
           "404": {
             "$ref": "#/components/responses/NotFound"
           },
           "409": {
-            "description": "You are already a member.",
+            "description": "You are already in, or have already asked.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
                 },
                 "example": {
-                  "message": "You are already in this group."
+                  "message": "You have already asked to join this group."
                 }
               }
             }
@@ -2267,6 +2674,284 @@
         }
       }
     },
+    "/groups/invitations": {
+      "get": {
+        "tags": [
+          "Groups"
+        ],
+        "summary": "Groups waiting on your answer",
+        "description": "Invitations other people have sent you, newest first. Accept one with `PATCH /groups/{id}/members/{yourId}`, turn it down with `DELETE` on the same path.",
+        "responses": {
+          "200": {
+            "description": "Your invitations.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "invitations": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/GroupInvitation"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/groups/{id}/invites": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "Group id."
+        }
+      ],
+      "post": {
+        "tags": [
+          "Groups"
+        ],
+        "summary": "Invite people into a group",
+        "description": "Any member can ask people in, and this is the only way into a private group besides a request. Nobody is added by it: each person gets an invitation to accept or turn down. Anyone already in, or already invited, is skipped.\n\nSomeone who has already **asked** to join is a different case, because answering a request is an admin's decision. An admin inviting them lets them straight in (`approved`). A plain member inviting them does not — they are skipped and listed in `awaitingAdmin`, so a member cannot use an invitation to get around admin approval.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "userIds"
+                ],
+                "properties": {
+                  "userIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Invitations sent.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "example": "Invitations sent."
+                    },
+                    "invited": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "Who was invited."
+                    },
+                    "approved": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "Had already asked to join and went straight in. Admins only."
+                    },
+                    "awaitingAdmin": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "Had already asked to join, but the caller is not an admin, so their request is left for an admin to answer."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "You are not in this group.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Only members of this group can do that."
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "Nothing left to do.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "They are already in this group, or already invited."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/groups/{id}/members/{userId}/role": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "Group id."
+        },
+        {
+          "name": "userId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "The member whose role changes."
+        }
+      ],
+      "put": {
+        "tags": [
+          "Groups"
+        ],
+        "summary": "Make someone an admin, or take it back",
+        "description": "Admins only, and only on people who are actually in the group. Two people can never lose the role: the creator, and whoever is the last admin left — a group with no admin can no longer be edited or cleaned up. That is also how the only admin gets out: make someone else an admin first, then leave.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "role"
+                ],
+                "properties": {
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "admin",
+                      "member"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Role changed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "example": "They are now an admin."
+                    },
+                    "role": {
+                      "type": "string",
+                      "enum": [
+                        "admin",
+                        "member"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unknown role, or this is the last admin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "A group needs at least one admin. Make someone else an admin first."
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "You are not an admin, or the target is the creator.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "The group creator is always an admin."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not in this group.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "That person is not in this group."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "They already have that role.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "They are already an admin."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/groups/{id}/members/{userId}": {
       "parameters": [
         {
@@ -2288,15 +2973,86 @@
           "description": "The member to remove."
         }
       ],
+      "patch": {
+        "tags": [
+          "Groups"
+        ],
+        "summary": "Accept an invitation, or approve a join request",
+        "description": "Both end in the same place, so one call covers them and who you are decides which it is: pass your **own** id to accept an invitation the group sent you, or somebody else id, as an admin, to let their request in.",
+        "responses": {
+          "200": {
+            "description": "They are in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "example": "You joined the group."
+                    },
+                    "status": {
+                      "type": "string",
+                      "example": "active"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Not your invitation, or you are not an admin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Only the person invited can accept an invitation."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nothing to answer.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "There is nothing to answer here."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Already in the group.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "That person is already in this group."
+                }
+              }
+            }
+          }
+        }
+      },
       "delete": {
         "tags": [
           "Groups"
         ],
-        "summary": "Remove someone from a group",
-        "description": "Admins only. The creator cannot be removed, and you cannot remove yourself.",
+        "summary": "Remove a member, or take away an invitation or a request",
+        "description": "One delete covers every kind of row, and who you are decides what it means:\n\n- an **admin** removes a member, declines a join request, or withdraws an invitation;\n- a **member** withdraws an invitation;\n- **you** turn down an invitation addressed to you, or take back your own request, by passing your own id.\n\nThe creator cannot be removed, and a member cannot remove themselves. That is what leaving is for.",
         "responses": {
           "200": {
-            "description": "Member removed.",
+            "description": "Removed.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2332,6 +3088,1404 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/conversations": {
+      "get": {
+        "tags": [
+          "Messages"
+        ],
+        "summary": "Your inbox",
+        "description": "Chats you are in, most recently active first, each with its last message, its participants and your own unread count. Chats you have deleted are left out until someone sends to them again.",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "maximum": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Your chats.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "conversations": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Conversation"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Messages"
+        ],
+        "summary": "Open a direct chat, or start a group chat",
+        "description": "Send `{ \"userId\": \"...\" }` to open a one-to-one chat. This is idempotent: if the thread already exists you get it back with **200** instead of a duplicate, so the client can call it every time the user presses Message.\n\nSend `{ \"type\": \"group\", \"participantIds\": [...] }` for a group chat. You become its admin, and it needs at least two other people.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "title": "Direct chat",
+                    "required": [
+                      "userId"
+                    ],
+                    "properties": {
+                      "userId": {
+                        "type": "string",
+                        "description": "The person to message."
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "title": "Group chat",
+                    "required": [
+                      "type",
+                      "participantIds"
+                    ],
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "group"
+                        ]
+                      },
+                      "name": {
+                        "type": "string",
+                        "maxLength": 75,
+                        "example": "Weekend football"
+                      },
+                      "participantIds": {
+                        "type": "array",
+                        "minItems": 2,
+                        "items": {
+                          "type": "string"
+                        },
+                        "description": "Everyone but you — you are added automatically."
+                      },
+                      "avatarUrl": {
+                        "type": "string",
+                        "description": "A URL from POST /upload."
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The chat already existed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "example": "Chat opened."
+                    },
+                    "conversation": {
+                      "$ref": "#/components/schemas/Conversation"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Chat created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "example": "Chat started."
+                    },
+                    "conversation": {
+                      "$ref": "#/components/schemas/Conversation"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "One of those accounts is gone or deactivated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "One of those accounts no longer exists."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/conversations/unread": {
+      "get": {
+        "tags": [
+          "Messages"
+        ],
+        "summary": "Unread totals for the message badge",
+        "description": "How many chats are unread, and how many messages that adds up to. Clients on the realtime socket refetch this after reconnecting instead of polling it.",
+        "responses": {
+          "200": {
+            "description": "Your unread totals.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "unread": {
+                      "type": "object",
+                      "properties": {
+                        "conversations": {
+                          "type": "integer",
+                          "example": 3
+                        },
+                        "messages": {
+                          "type": "integer",
+                          "example": 11
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/conversations/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "Conversation id."
+        }
+      ],
+      "get": {
+        "tags": [
+          "Messages"
+        ],
+        "summary": "Get one chat",
+        "description": "The chat header: title, picture, participants and your unread count.",
+        "responses": {
+          "200": {
+            "description": "The chat.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "conversation": {
+                      "$ref": "#/components/schemas/Conversation"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "No such chat, or you are not in it — both answer 404 so private threads are not leaked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Conversation not found."
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Messages"
+        ],
+        "summary": "Rename a group chat",
+        "description": "Group chats only, admins only. A direct chat is named after the other person.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "maxLength": 75,
+                    "example": "Weekend football"
+                  },
+                  "avatarUrl": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Chat updated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "example": "Chat updated."
+                    },
+                    "conversation": {
+                      "$ref": "#/components/schemas/Conversation"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "This is a direct chat, or the name is too long.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "That only applies to group chats."
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "You are not an admin of this chat.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Only a chat admin can do that."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such chat, or you are not in it — both answer 404 so private threads are not leaked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Conversation not found."
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Messages"
+        ],
+        "summary": "Delete a chat, for you only",
+        "description": "Hides the chat and everything said in it so far from your inbox. Everyone else keeps the thread, and the next message brings it back for you with only the new messages in it. To walk out of a group chat for good, use `DELETE /conversations/{id}/participants`.",
+        "responses": {
+          "200": {
+            "description": "Chat deleted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "example": "Chat deleted."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "No such chat, or you are not in it — both answer 404 so private threads are not leaked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Conversation not found."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/conversations/{id}/read": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "Conversation id."
+        }
+      ],
+      "post": {
+        "tags": [
+          "Messages"
+        ],
+        "summary": "Mark a chat as read",
+        "description": "Clears your unread count for this chat. Call it when the thread is opened.",
+        "responses": {
+          "200": {
+            "description": "Marked as read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "example": "Chat marked as read."
+                    },
+                    "lastReadAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "No such chat, or you are not in it — both answer 404 so private threads are not leaked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Conversation not found."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/conversations/{id}/messages": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "Conversation id."
+        }
+      ],
+      "get": {
+        "tags": [
+          "Messages"
+        ],
+        "summary": "Read a thread",
+        "description": "Newest message first. To page backwards through the history, pass the `nextCursor` from the previous call as `before`; a null `nextCursor` means you have reached the start of the thread.\n\nNew, edited and unsent messages are pushed over the `/ws` socket as `message:new` and `message:updated`, in this same shape. Call this again after reconnecting to pick up anything sent while the socket was down.",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 30,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "A message id: return only messages older than it."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of the thread.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "messages": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Message"
+                      }
+                    },
+                    "nextCursor": {
+                      "type": "string",
+                      "nullable": true,
+                      "description": "Pass as `before` for the next page; null at the start of the thread."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "No such chat, or you are not in it — both answer 404 so private threads are not leaked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Conversation not found."
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Messages"
+        ],
+        "summary": "Send a message",
+        "description": "A message needs text, at least one attachment, or both. Attachments are the objects `POST /upload` returns, passed straight through.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string",
+                    "maxLength": 5000,
+                    "example": "On my way."
+                  },
+                  "attachments": {
+                    "type": "array",
+                    "maxItems": 10,
+                    "items": {
+                      "$ref": "#/components/schemas/UploadedMedia"
+                    }
+                  },
+                  "replyTo": {
+                    "type": "string",
+                    "description": "The id of a message in this same chat."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Message sent.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "example": "Message sent."
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Message"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "No such chat, or you are not in it — both answer 404 so private threads are not leaked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Conversation not found."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/conversations/{id}/messages/{messageId}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "Conversation id."
+        },
+        {
+          "name": "messageId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "Message id."
+        }
+      ],
+      "patch": {
+        "tags": [
+          "Messages"
+        ],
+        "summary": "Edit your message",
+        "description": "Your own messages only, only the text (attachments stay as they were sent), and only within **15 minutes** of sending. Past that the message is part of a shared record and the call answers 400. The reply carries `editedAt` so the client can mark it as edited.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "text"
+                ],
+                "properties": {
+                  "text": {
+                    "type": "string",
+                    "maxLength": 5000
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Message updated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "example": "Message updated."
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Message"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Not your message.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "You can only change your own messages."
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Messages"
+        ],
+        "summary": "Remove a message, for you or for everyone",
+        "description": "Two different acts behind one call, chosen with `scope`.\n\n**`scope=me`** takes the message off your own thread and nobody else's. Any message qualifies, including one somebody else sent and one already unsent — hiding something from yourself takes nothing from anyone else, which is what stops one person clearing another's history. No time limit, and it cannot be undone.\n\n**`scope=everyone`** (the default) unsends it. Your own messages only, and only within **15 minutes** of sending. The row stays as a tombstone — `deleted: true` with empty text — so the thread keeps its order and replies keep a target. Any photo or video is deleted from Cloudinary at the same time; if that provider call fails the message is still unsent and the failure is logged.",
+        "parameters": [
+          {
+            "name": "scope",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "me",
+                "everyone"
+              ],
+              "default": "everyone"
+            },
+            "description": "Whose thread it comes off."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Removed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "example": "Message removed for everyone."
+                    },
+                    "scope": {
+                      "type": "string",
+                      "enum": [
+                        "me",
+                        "everyone"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The 15-minute window has passed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "You can only remove a message within 15 minutes of sending it."
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Not your message — only for scope=everyone.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "You can only change your own messages."
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/conversations/{id}/participants": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "Conversation id."
+        }
+      ],
+      "get": {
+        "tags": [
+          "Messages"
+        ],
+        "summary": "List the people in a chat",
+        "responses": {
+          "200": {
+            "description": "The participants.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "participants": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ConversationParticipant"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "No such chat, or you are not in it — both answer 404 so private threads are not leaked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Conversation not found."
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Messages"
+        ],
+        "summary": "Add people to a group chat",
+        "description": "Any member can add. A direct chat cannot grow — start a group chat instead. Anyone already in the chat is skipped.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "userIds"
+                ],
+                "properties": {
+                  "userIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "People added.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "example": "Added to the chat."
+                    },
+                    "added": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "This is a direct chat, or the chat is full.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "You cannot add people to a direct chat. Start a group chat instead."
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "No such chat, or you are not in it — both answer 404 so private threads are not leaked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Conversation not found."
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "They are already in the chat.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "They are already in this chat."
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Messages"
+        ],
+        "summary": "Leave a group chat",
+        "description": "Group chats only. If you were the last admin, the longest-standing member takes over; if you were the last person, the chat and its messages are removed.",
+        "responses": {
+          "200": {
+            "description": "You left.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "example": "You left the chat."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "This is a direct chat.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "You cannot leave a direct chat. Delete it instead."
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "No such chat, or you are not in it — both answer 404 so private threads are not leaked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Conversation not found."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/conversations/{id}/participants/{userId}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "Conversation id."
+        },
+        {
+          "name": "userId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "The person to remove."
+        }
+      ],
+      "delete": {
+        "tags": [
+          "Messages"
+        ],
+        "summary": "Remove someone from a group chat",
+        "description": "Admins only. Use leave to remove yourself.",
+        "responses": {
+          "200": {
+            "description": "Removed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "example": "Removed from the chat."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "You are not an admin of this chat.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Only a chat admin can do that."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such chat, or you are not in it — both answer 404 so private threads are not leaked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Conversation not found."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stories": {
+      "get": {
+        "tags": [
+          "Stories"
+        ],
+        "summary": "The story rail",
+        "description": "Live stories from you and your friends, grouped by the person who posted them and ordered the way the rail reads: you first, then anyone with something you have not seen, then the rest by recency. Inside a group the stories run oldest to newest, which is the order they play in.\n\n`viewCount` appears only on your own stories — how many people watched is the author's business.",
+        "responses": {
+          "200": {
+            "description": "The rail.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "stories": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/StoryGroup"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Stories"
+        ],
+        "summary": "Post a story",
+        "description": "Either a picture or video — pass the descriptor `POST /upload` returned — or a text story with an optional background. A caption may ride along with media. Every story lapses 24 hours after it goes up.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "media": {
+                    "allOf": [
+                      {
+                        "$ref": "#/components/schemas/UploadedMedia"
+                      }
+                    ],
+                    "description": "Leave this out for a text story."
+                  },
+                  "text": {
+                    "type": "string",
+                    "maxLength": 250,
+                    "description": "The caption on media, or the whole story without it.",
+                    "example": "Sunset over an empty stadium"
+                  },
+                  "background": {
+                    "type": "string",
+                    "maxLength": 120,
+                    "description": "Text stories only: any CSS background the client understands.",
+                    "example": "linear-gradient(135deg, #1877f2, #0b5cbf)"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Story shared.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "example": "Story shared."
+                    },
+                    "story": {
+                      "$ref": "#/components/schemas/Story"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/stories/mine": {
+      "get": {
+        "tags": [
+          "Stories"
+        ],
+        "summary": "Your own live stories",
+        "description": "Newest first, each with the number of people who have watched it.",
+        "responses": {
+          "200": {
+            "description": "Your stories.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "stories": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Story"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/stories/{id}/views": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "Story id."
+        }
+      ],
+      "post": {
+        "tags": [
+          "Stories"
+        ],
+        "summary": "Mark a story as seen",
+        "description": "Call it when the story opens. One view per person however many times they come back, and looking at your own story never counts — the number is meant to say how many other people watched.",
+        "responses": {
+          "200": {
+            "description": "Recorded, or already recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "example": "Marked as seen."
+                    },
+                    "counted": {
+                      "type": "boolean",
+                      "description": "False when this was a repeat look, or your own story."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Expired, deleted, or posted by someone whose stories you do not see — all three answer the same way, so a story you are not meant to know about stays unknown.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "That story is no longer available."
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Stories"
+        ],
+        "summary": "Who watched your story",
+        "description": "Newest first. Only the person who posted it may ask.",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The viewers.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "viewCount": {
+                      "type": "integer",
+                      "example": 12
+                    },
+                    "viewers": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "seenAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "user": {
+                            "$ref": "#/components/schemas/Author"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Not your story.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "Only the person who posted a story can see who watched it."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Expired, deleted, or posted by someone whose stories you do not see — all three answer the same way, so a story you are not meant to know about stays unknown.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "That story is no longer available."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stories/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "Story id."
+        }
+      ],
+      "delete": {
+        "tags": [
+          "Stories"
+        ],
+        "summary": "Delete your story",
+        "description": "Takes the story, its view rows and its picture on Cloudinary. Your own only.",
+        "responses": {
+          "200": {
+            "description": "Story deleted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "example": "Story deleted."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Not your story.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "You can only delete your own stories."
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Expired, deleted, or posted by someone whose stories you do not see — all three answer the same way, so a story you are not meant to know about stays unknown.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "message": "That story is no longer available."
+                }
+              }
+            }
           }
         }
       }
@@ -2427,6 +4581,243 @@
                 }
               }
             }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Upload"
+        ],
+        "summary": "Throw away files that were uploaded but never used",
+        "description": "For the case where the upload succeeded and the post did not: the composer failed at the publish step and the user gave up. Without this the files sit on Cloudinary with nothing pointing at them.\n\nThree things must hold before anything is deleted, and the endpoint simply skips whatever fails them:\n\n1. **you uploaded it** — every upload is recorded against the account that made it, so one person can never reach another's media;\n2. **nothing has claimed it** — publishing a post or sending a message marks its files as in use;\n3. **no post or message references it** — checked directly, so a stale or replayed id cannot take down live media.\n\nThe reply says how many were removed rather than failing on the ones that were not, so a client can fire it and forget it.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "publicIds"
+                ],
+                "properties": {
+                  "publicIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "The `publicId` values POST /upload returned.",
+                    "example": [
+                      "facebook/ab12cd34"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "However many qualified were removed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "example": "Unused uploads discarded."
+                    },
+                    "discarded": {
+                      "type": "integer",
+                      "example": 1
+                    },
+                    "skipped": {
+                      "type": "integer",
+                      "description": "Not yours, already claimed, or still referenced.",
+                      "example": 0
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/notifications": {
+      "get": {
+        "tags": [
+          "Notifications"
+        ],
+        "summary": "Your notifications",
+        "description": "Newest first, 20 at a time. Pass the previous `nextCursor` as `before` for the next page; a null cursor means there is nothing older. `unread` is the badge number.\n\nCreated for: friend requests sent to you and accepted, comments and first reactions on your posts, and group invitations. Chat messages are not notifications — they have their own badge under `/conversations/unread`.",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "maximum": 50
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "The `nextCursor` from the previous page."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of notifications.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "notifications": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Notification"
+                      }
+                    },
+                    "nextCursor": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "unread": {
+                      "type": "integer",
+                      "example": 3
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/notifications/unread": {
+      "get": {
+        "tags": [
+          "Notifications"
+        ],
+        "summary": "Unread count for the bell badge",
+        "responses": {
+          "200": {
+            "description": "How many are unread.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "unread": {
+                      "type": "integer",
+                      "example": 3
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/notifications/read": {
+      "post": {
+        "tags": [
+          "Notifications"
+        ],
+        "summary": "Mark every notification as read",
+        "responses": {
+          "200": {
+            "description": "All read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "unread": {
+                      "type": "integer",
+                      "example": 0
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/notifications/{id}/read": {
+      "post": {
+        "tags": [
+          "Notifications"
+        ],
+        "summary": "Mark one notification as read",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The notification id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Marked read. `unread` is the new badge number.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "unread": {
+                      "type": "integer",
+                      "example": 0
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
           }
         }
       }
