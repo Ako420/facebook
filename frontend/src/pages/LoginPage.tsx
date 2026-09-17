@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { AuthAlert, AuthButton, TextField } from "../components/auth/AuthControls";
-import { AuthFooter } from "../components/auth/AuthFooter";
+// import { AuthFooter } from "../components/auth/AuthFooter";
 import { MetaMark } from "../components/auth/MetaMark";
 import { Icon } from "../components/icons/Icon";
 import { useAuth } from "../features/auth/AuthContext";
@@ -142,7 +142,7 @@ export default function LoginPage() {
         </section>
       </main>
 
-    <AuthFooter />
+    {/* <AuthFooter /> */}
     </div>
   );
 }
