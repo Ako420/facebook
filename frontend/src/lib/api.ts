@@ -1,6 +1,7 @@
 import axios from "axios";
 import type { AxiosError } from "axios";
 
+const apiUrl = import.meta.env.VITE_API_URL;
 const TOKEN_KEY = "fb.token";
 
 /** The JWT lives in localStorage so a refresh keeps you signed in for the 7d it lasts. */
@@ -22,7 +23,7 @@ export const writeToken = (token: string | null) => {
 };
 
 export const api = axios.create({
-  baseURL:process.env.VITE_API_URL || "http://localhost:3000/api",
+  baseURL:apiUrl || "http://localhost:5000/api",
   headers: { "Content-Type": "application/json" },
 });
 
