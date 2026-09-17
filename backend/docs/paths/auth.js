@@ -179,6 +179,9 @@ export const authPaths = {
     put: {
       tags: ['Auth'],
       summary: 'Change your password',
+      description:
+        'Signs you out everywhere else: every token issued before the change stops working, '
+        + 'over REST and on open sockets. The response carries a fresh token for this session.',
       requestBody: {
         required: true,
         content: json({
@@ -196,6 +199,8 @@ export const authPaths = {
           type: 'object',
           properties: {
             message: { type: 'string', example: 'Password changed successfully.' },
+            token: { type: 'string', description: 'Replaces the token you sent.' },
+            user: { $ref: '#/components/schemas/User' },
           },
         }),
         400: { $ref: '#/components/responses/ValidationError' },

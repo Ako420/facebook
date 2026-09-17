@@ -9,6 +9,8 @@ export interface ApiPerson {
   avatarUrl?: string;
   work?: string;
   friendsCount?: number;
+  online?: boolean;
+  lastActiveAt?: string | null;
 }
 
 /** One row of the Friend collection, from this viewer's side. */

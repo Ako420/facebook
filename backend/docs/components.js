@@ -132,7 +132,23 @@ export const schemas = {
       id: { type: 'string', description: 'Friendship id — use this to accept or remove.' },
       status: { type: 'string', enum: ['pending', 'accepted', 'rejected'] },
       createdAt: { type: 'string', format: 'date-time' },
-      user: { $ref: '#/components/schemas/Person' },
+      user: {
+        allOf: [
+          { $ref: '#/components/schemas/Person' },
+          {
+            type: 'object',
+            properties: {
+              online: { type: 'boolean', description: 'Accepted friends only.' },
+              lastActiveAt: {
+                type: 'string',
+                format: 'date-time',
+                nullable: true,
+                description: 'Accepted friends only.',
+              },
+            },
+          },
+        ],
+      },
     },
   },
 

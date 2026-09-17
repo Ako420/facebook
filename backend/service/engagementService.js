@@ -2,6 +2,7 @@ import { Post } from "../model/post.js";
 import { Comment } from "../model/comment.js";
 import { ApiError } from "../utils/apiError.js";
 import { notify, retract } from "./notificationService.js";
+import { announceComment, announceCommentRemoved, announceReactions } from "./postEvents.js";
 
 /* ---- Comments ------------------------------------------------------------ */
 
@@ -33,6 +34,7 @@ export const createCommentService = async (postId, userId, commentText) => {
   });
 
   await comment.populate("userId", "name avatarUrl");
+  await announceComment(post._id, comment.toObject());
   return comment;
 };
 
@@ -49,6 +51,7 @@ export const deleteCommentService = async (commentId, userId) => {
 
   await comment.deleteOne();
   await retract({ commentId: comment._id });
+  await announceCommentRemoved(comment.postId, comment._id);
 
   const post = await Post.findByIdAndUpdate(
     comment.postId,
@@ -129,6 +132,8 @@ export const setReactionService = async (postId, userId, rawType) => {
     });
   }
 
+  await announceReactions(post._id, summarizeReactions(post));
+
   return summarizeReactions(post, userId);
 };
 
@@ -147,6 +152,7 @@ export const removeReactionService = async (postId, userId) => {
   await post.save();
 
   await retract({ type: "reaction", postId: post._id, actorId: userId });
+  await announceReactions(post._id, summarizeReactions(post));
 
   return summarizeReactions(post, userId);
 };

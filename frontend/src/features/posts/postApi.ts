@@ -76,6 +76,11 @@ export const listPosts = async (params?: {
   return data.posts;
 };
 
+export const getPost = async (id: string) => {
+  const { data } = await api.get<{ post: ApiPost }>(`/posts/${id}`);
+  return data.post;
+};
+
 export const updatePost = async (id: string, body: { title: string }) => {
   const { data } = await api.patch<{ post: ApiPost }>(`/posts/${id}`, body);
   return data.post;

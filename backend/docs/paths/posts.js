@@ -96,6 +96,25 @@ export const postPaths = {
   },
 
   '/posts/{id}': {
+    get: {
+      tags: ['Posts'],
+      summary: 'Read one post or reel',
+      description:
+        'What a notification links to. A post in a private group is only returned to its '
+        + 'members.',
+      parameters: [pathId('id', 'The post id.')],
+      responses: {
+        200: ok('The post.', {
+          type: 'object',
+          properties: { post: { $ref: '#/components/schemas/Post' } },
+        }),
+        400: { $ref: '#/components/responses/ValidationError' },
+        401: { $ref: '#/components/responses/Unauthorized' },
+        403: { $ref: '#/components/responses/Forbidden' },
+        404: { $ref: '#/components/responses/NotFound' },
+      },
+    },
+
     patch: {
       tags: ['Posts'],
       summary: 'Edit your own post or reel',

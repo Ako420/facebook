@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { currentUser } from "../../data";
 import { formatRelativeTime } from "../../lib/format";
@@ -13,6 +13,7 @@ import {
   listComments,
 } from "../../features/posts/engagementApi";
 import type { ApiComment } from "../../features/posts/engagementApi";
+import { useRealtimeEvent, useRealtimeTopic } from "../../features/realtime/RealtimeProvider";
 import { avatar } from "../../data";
 
 /** Stable stand-in face for an account with no photo of its own. */
@@ -88,12 +89,19 @@ export function LiveCommentThread({
   const [error, setError] = useState("");
   const [confirming, setConfirming] = useState<ApiComment | null>(null);
   const [removing, setRemoving] = useState(false);
+  const known = useRef(new Set<string>());
+
+  useRealtimeTopic(`post:${postId}`);
 
   useEffect(() => {
     let active = true;
 
     listComments(postId)
-      .then((fetched) => active && setComments(fetched))
+      .then((fetched) => {
+        if (!active) return;
+        known.current = new Set(fetched.map((comment) => comment.id));
+        setComments(fetched);
+      })
       .catch((caught) => active && setError(toApiFailure(caught).message))
       .finally(() => active && setLoading(false));
 
@@ -101,6 +109,40 @@ export function LiveCommentThread({
       active = false;
     };
   }, [postId]);
+
+  const addComment = (comment: ApiComment) => {
+    if (known.current.has(comment.id)) return;
+    known.current.add(comment.id);
+    setComments((current) => [...current, comment]);
+    onCountChange(1);
+  };
+
+  const removeComment = (id: string) => {
+    if (!known.current.delete(id)) return;
+    setComments((current) => current.filter((comment) => comment.id !== id));
+    onCountChange(-1);
+  };
+
+  useRealtimeEvent("comment:new", ({ postId: target, comment }) => {
+    if (target === postId && !loading) addComment(comment);
+  });
+
+  useRealtimeEvent("comment:deleted", ({ postId: target, commentId }) => {
+    if (target === postId && !loading) removeComment(commentId);
+  });
+
+  useRealtimeEvent("ready", () => {
+    if (loading) return;
+
+    listComments(postId)
+      .then((fetched) => {
+        const delta = fetched.length - known.current.size;
+        known.current = new Set(fetched.map((comment) => comment.id));
+        setComments(fetched);
+        if (delta !== 0) onCountChange(delta);
+      })
+      .catch(() => undefined);
+  });
 
   const submit = async () => {
     const text = draft.trim();
@@ -110,9 +152,8 @@ export function LiveCommentThread({
     setError("");
     try {
       const created = await createComment(postId, text);
-      setComments((current) => [...current, created]);
+      addComment(created);
       setDraft("");
-      onCountChange(1);
     } catch (caught) {
       const failure = toApiFailure(caught);
       setError(failure.errors.commentText || failure.message);
@@ -130,8 +171,7 @@ export function LiveCommentThread({
 
     try {
       await deleteComment(id);
-      setComments((current) => current.filter((comment) => comment.id !== id));
-      onCountChange(-1);
+      removeComment(id);
       setConfirming(null);
     } catch (caught) {
       setComments(snapshot);

@@ -34,6 +34,10 @@ export const authenticateToken = async (token) => {
     throw ApiError.unauthorized('This account has been deactivated.');
   }
 
+  if ((payload.v ?? 0) !== (user.tokenVersion ?? 0)) {
+    throw ApiError.unauthorized('Your password was changed. Please log in again.');
+  }
+
   return { user, payload };
 };
 

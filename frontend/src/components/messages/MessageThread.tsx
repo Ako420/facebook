@@ -23,9 +23,14 @@ import {
 } from "../../features/messages/messageApi";
 import type { ApiConversation, ApiMessage } from "../../features/messages/messageApi";
 import { useMessages } from "../../features/messages/MessagesProvider";
-import { useRealtimeEvent } from "../../features/realtime/RealtimeProvider";
+import { useRealtimeEvent, useRealtimeSend } from "../../features/realtime/RealtimeProvider";
+import { usePresence } from "../../features/presence/PresenceProvider";
 
 type Removal = { message: ApiMessage; scope: "me" | "everyone" };
+type Typist = { name: string; until: number };
+
+const TYPING_VISIBLE_MS = 4_000;
+const TYPING_SEND_INTERVAL_MS = 3_000;
 
 /** Newest-last, which is the order a thread reads in. */
 const chronological = (rows: ApiMessage[]) =>
@@ -203,6 +208,16 @@ export function MessageThread({ conversationId }: { conversationId: string }) {
   const bottom = useRef<HTMLDivElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
+  const sendRealtime = useRealtimeSend();
+  const lastTypingSent = useRef(0);
+  const [typists, setTypists] = useState<Record<string, Typist>>({});
+
+  const otherParticipant =
+    conversation?.type === "direct"
+      ? conversation.participants.find((row) => row.user.id !== account?.id)
+      : undefined;
+  const otherPresence = usePresence(otherParticipant?.user.id);
+
   const inboxRow = conversations.find((row) => row.id === conversationId);
   const newestSeen = inboxRow?.lastMessage?.id ?? null;
 
@@ -280,9 +295,42 @@ export function MessageThread({ conversationId }: { conversationId: string }) {
     if (chatId !== conversationId) return;
 
     setMessages((current) => mergeMessages(current, [message]));
+    setTypists((current) => {
+      if (!current[message.sender.id]) return current;
+      const next = { ...current };
+      delete next[message.sender.id];
+      return next;
+    });
 
     if (!message.fromViewer) markSeen();
   });
+
+  useRealtimeEvent("typing", ({ conversationId: chatId, userId, name }) => {
+    if (chatId !== conversationId || userId === account?.id) return;
+    setTypists((current) => ({ ...current, [userId]: { name, until: Date.now() + TYPING_VISIBLE_MS } }));
+  });
+
+  useEffect(() => {
+    const deadlines = Object.values(typists).map((typist) => typist.until);
+    if (deadlines.length === 0) return;
+
+    const timer = setTimeout(() => {
+      const now = Date.now();
+      setTypists((current) =>
+        Object.fromEntries(Object.entries(current).filter(([, typist]) => typist.until > now)),
+      );
+    }, Math.max(0, Math.min(...deadlines) - Date.now()) + 50);
+
+    return () => clearTimeout(timer);
+  }, [typists]);
+
+  const notifyTyping = () => {
+    const now = Date.now();
+    if (editingId || now - lastTypingSent.current < TYPING_SEND_INTERVAL_MS) return;
+
+    lastTypingSent.current = now;
+    sendRealtime({ type: "typing", conversationId });
+  };
 
   useRealtimeEvent("message:updated", ({ conversationId: chatId, message }) => {
     if (chatId !== conversationId) return;
@@ -311,8 +359,8 @@ export function MessageThread({ conversationId }: { conversationId: string }) {
     setError("You are no longer in this chat, or you deleted it.");
   });
 
-  useRealtimeEvent("ready", () => {
-    if (loading) return;
+  useRealtimeEvent("ready", ({ resync }) => {
+    if (loading || !resync) return;
 
     listMessages(conversationId, { limit: 30 })
       .then((page) => setMessages((current) => mergeMessages(current, page.messages)))
@@ -356,6 +404,7 @@ export function MessageThread({ conversationId }: { conversationId: string }) {
 
       setText("");
       setFiles([]);
+      lastTypingSent.current = 0;
       refresh();
     } catch (caught) {
       setError(toApiFailure(caught).message);
@@ -412,9 +461,23 @@ export function MessageThread({ conversationId }: { conversationId: string }) {
   const subtitle =
     conversation.type === "group"
       ? `${conversation.participants.length} people`
-      : conversation.lastMessage
-        ? `Active ${formatRelativeTime(conversation.lastMessage.sentAt)} ago`
-        : "Say hello";
+      : otherPresence?.online
+        ? "Active now"
+        : otherPresence?.lastActiveAt
+          ? `Active ${formatRelativeTime(otherPresence.lastActiveAt)} ago`
+          : conversation.lastMessage
+            ? `Active ${formatRelativeTime(conversation.lastMessage.sentAt)} ago`
+            : "Say hello";
+
+  const typingNames = Object.values(typists).map((typist) => typist.name);
+  const typingLabel =
+    typingNames.length === 0
+      ? ""
+      : typingNames.length === 1
+        ? `${typingNames[0]} is typing…`
+        : typingNames.length === 2
+          ? `${typingNames[0]} and ${typingNames[1]} are typing…`
+          : "Several people are typing…";
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -427,7 +490,12 @@ export function MessageThread({ conversationId }: { conversationId: string }) {
           <Icon name="chevron-left" size={15} />
         </button>
 
-        <Avatar src={chatAvatar(conversation)} alt={conversation.title} size={40} />
+        <Avatar
+          src={chatAvatar(conversation)}
+          alt={conversation.title}
+          size={40}
+          online={Boolean(otherPresence?.online)}
+        />
         <div className="min-w-0 flex-1">
           <p className="truncate text-[0.95rem] font-semibold text-ink">
             {conversation.title}
@@ -493,6 +561,8 @@ export function MessageThread({ conversationId }: { conversationId: string }) {
       )}
 
       <footer className="border-t border-line px-gutter py-2">
+        {typingLabel && <p className="pb-1 text-xs text-ink-muted">{typingLabel}</p>}
+
         {editingId && (
           <p className="flex items-center justify-between gap-2 pb-1 text-xs text-ink-muted">
             Editing a message
@@ -554,7 +624,10 @@ export function MessageThread({ conversationId }: { conversationId: string }) {
           <textarea
             rows={1}
             value={text}
-            onChange={(event) => setText(event.target.value)}
+            onChange={(event) => {
+              setText(event.target.value);
+              if (event.target.value.trim()) notifyTyping();
+            }}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey) {
                 event.preventDefault();

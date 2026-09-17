@@ -20,6 +20,7 @@ import {
 import { deletePost, toReactionCounts } from "../../features/posts/postApi";
 import type { ApiPost } from "../../features/posts/postApi";
 import { useAuth } from "../../features/auth/AuthContext";
+import { useRealtimeEvent } from "../../features/realtime/RealtimeProvider";
 
 const privacyIcon: Record<Post["privacy"], IconName> = {
   public: "globe",
@@ -54,17 +55,19 @@ export function PostCard({
   post,
   onDeleted,
   onUpdated,
+  initiallyShowComments = false,
 }: {
   post: Post;
   onDeleted?: (id: string) => void;
   onUpdated?: (post: ApiPost) => void;
+  initiallyShowComments?: boolean;
 }) {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [reaction, setReaction] = useState<ReactionType | null>(post.viewerReaction);
   const [counts, setCounts] = useState<ReactionCounts>(post.reactions);
   const [commentCount, setCommentCount] = useState(post.commentCount);
-  const [showComments, setShowComments] = useState(false);
+  const [showComments, setShowComments] = useState(initiallyShowComments);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [removing, setRemoving] = useState(false);
@@ -74,6 +77,11 @@ export function PostCard({
   const menuRef = useRef<HTMLDivElement>(null);
 
   const isMine = user?.id === post.author.id;
+
+  useRealtimeEvent("post:reactions", ({ postId, counts: tallies, total }) => {
+    if (postId !== post.id) return;
+    setCounts(toReactionCounts({ counts: tallies, total, viewerReaction: null }));
+  });
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -146,7 +154,9 @@ export function PostCard({
             )}
           </p>
           <p className="flex items-center gap-1.5 text-xs text-ink-muted">
-            <span>{formatRelativeTime(post.createdAt)}</span>
+            <button onClick={() => navigate(`/posts/${post.id}`)} className="hover:underline">
+              {formatRelativeTime(post.createdAt)}
+            </button>
             <span>·</span>
             <Icon name={privacyIcon[post.privacy]} size={11} />
             {post.location && (

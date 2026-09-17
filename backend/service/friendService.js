@@ -1,7 +1,7 @@
 import { User } from "../model/user.js";
 import { Friend } from "../model/friend.js";
 import { ApiError } from "../utils/apiError.js";
-import { emitToUsers } from "../lib/realtime.js";
+import { emitToUsers, isOnline } from "../lib/realtime.js";
 import { notify, retract } from "./notificationService.js";
 
 
@@ -30,8 +30,8 @@ export const getFriendsByUserIdService = async (userId) => {
   const rows = await Friend.find({
     $or: [{ userId }, { friendId: userId }],
   })
-    .populate("userId", USER_FIELDS)
-    .populate("friendId", USER_FIELDS)
+    .populate("userId", `${USER_FIELDS} lastActiveAt`)
+    .populate("friendId", `${USER_FIELDS} lastActiveAt`)
     .sort({ createdAt: -1 })
     .lean();
 
@@ -58,9 +58,18 @@ export const getFriendsByUserIdService = async (userId) => {
       },
     };
 
-    if (row.status === "accepted") friends.push(entry);
-    else if (row.status === "pending") (sentByMe ? outgoing : incoming).push(entry);
+    if (row.status === "accepted") {
+      entry.user.lastActiveAt = other.lastActiveAt ?? null;
+      friends.push(entry);
+    } else if (row.status === "pending") {
+      (sentByMe ? outgoing : incoming).push(entry);
+    }
   }
+
+  const online = await Promise.all(friends.map((entry) => isOnline(entry.user.id)));
+  friends.forEach((entry, index) => {
+    entry.user.online = online[index];
+  });
 
   return { friends, incoming, outgoing };
 };
@@ -116,7 +125,7 @@ export const createFriendService = async (userId, friendId) => {
     type: "friend-request",
     friendId: friend._id,
   });
-  announceFriendsChanged(friend);
+  await announceFriendsChanged(friend);
 
   return friend;
 };
@@ -172,7 +181,7 @@ export const updateFriendStatusService = async (id, status, actorId) => {
     });
   }
 
-  announceFriendsChanged(friend);
+  await announceFriendsChanged(friend);
 
   return friend;
 };
@@ -196,7 +205,7 @@ export const deleteFriendService = async (id, actorId) => {
   }
 
   await retract({ friendId: friend._id });
-  announceFriendsChanged(friend);
+  await announceFriendsChanged(friend);
 
   return friend;
 };

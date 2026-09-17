@@ -1,15 +1,22 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import { useNavigate } from "react-router-dom";
 import { toApiFailure } from "../../lib/api";
+import { useAuth } from "../auth/AuthContext";
+import { toPerson } from "../friends/friendApi";
+import { useMessages } from "../messages/MessagesProvider";
 import { useRealtimeEvent, useRealtimeStatus } from "../realtime/RealtimeProvider";
 import {
+  describeNotification,
   listNotifications,
   markAllNotificationsRead,
   markNotificationRead,
+  notificationHref,
 } from "./notificationApi";
 import type { ApiNotification } from "./notificationApi";
 
 const FALLBACK_POLL_MS = 60_000;
+const ALERT_MAX_AGE_MS = 60_000;
 
 interface NotificationsValue {
   notifications: ApiNotification[];
@@ -26,6 +33,9 @@ interface NotificationsValue {
 const NotificationsContext = createContext<NotificationsValue | null>(null);
 
 export function NotificationsProvider({ children }: { children: ReactNode }) {
+  const navigate = useNavigate();
+  const { user: account } = useAuth();
+  const { alerts } = useMessages();
   const live = useRealtimeStatus() === "open";
 
   const [notifications, setNotifications] = useState<ApiNotification[]>([]);
@@ -74,15 +84,35 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(timer);
   }, [live, refresh]);
 
-  useRealtimeEvent("ready", () => {
-    refresh();
+  useRealtimeEvent("ready", ({ resync }) => {
+    if (resync) refresh();
   });
+
+  const showAlert = (notification: ApiNotification) => {
+    if (!alerts.enabled || document.visibilityState === "visible") return;
+    if (Date.now() - Date.parse(notification.createdAt) > ALERT_MAX_AGE_MS) return;
+
+    const person = toPerson(notification.actor);
+    const alert = new Notification(person.name, {
+      body: describeNotification(notification),
+      tag: `notification-${notification.id}`,
+      icon: person.avatar,
+    });
+
+    alert.onclick = () => {
+      window.focus();
+      markNotificationRead(notification.id).catch(() => undefined);
+      navigate(notificationHref(notification, account?.id ?? ""));
+      alert.close();
+    };
+  };
 
   useRealtimeEvent("notification:new", ({ notification, unread: count }) => {
     setNotifications((current) =>
       current.some((row) => row.id === notification.id) ? current : [notification, ...current],
     );
     setUnread(count);
+    showAlert(notification);
   });
 
   useRealtimeEvent("notification:read", ({ ids, unread: count }) => {

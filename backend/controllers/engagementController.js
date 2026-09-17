@@ -5,20 +5,7 @@ import {
   setReactionService,
   removeReactionService,
 } from "../service/engagementService.js";
-
-/** Shapes a comment for the client, with its author inlined. */
-const publicComment = (comment) => {
-  const author = comment.userId && typeof comment.userId === "object" ? comment.userId : null;
-
-  return {
-    id: comment._id,
-    content: comment.content,
-    createdAt: comment.createdAt,
-    author: author
-      ? { id: author._id, name: author.name, avatarUrl: author.avatarUrl }
-      : { id: comment.userId },
-  };
-};
+import { publicComment } from "../utils/presenters.js";
 
 /** POST /api/comment/:postId */
 export const createComment = async (req, res, next) => {

@@ -163,7 +163,10 @@ export const changeUserPassword = async (userId, body) => {
   }
 
   user.password = newPassword;
+  user.tokenVersion = (user.tokenVersion ?? 0) + 1;
   await user.save();
+
+  await disconnectUser(user._id, CLOSE.AUTH_FAILED, 'Your password was changed.');
 
   return user;
 };
@@ -194,7 +197,7 @@ export const deleteUserAccount = async (userId, body) => {
   user.status = 'inactive';
   await user.save();
 
-  disconnectUser(user._id, CLOSE.ACCOUNT_CLOSED, 'This account has been deactivated.');
+  await disconnectUser(user._id, CLOSE.ACCOUNT_CLOSED, 'This account has been deactivated.');
 
   return user;
 };

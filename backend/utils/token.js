@@ -9,9 +9,9 @@ const getSecret = () => {
   return secret;
 };
 
-// The payload  carries only the user id. 
-export const signToken = (userId) =>
-  jwt.sign({ sub: String(userId)}, getSecret(), {
+// The payload carries the user id and the account's token version.
+export const signToken = (userId, version = 0) =>
+  jwt.sign({ sub: String(userId), v: version }, getSecret(), {
     expiresIn: process.env.JWT_EXPIRES_IN || '7d',
   });
 

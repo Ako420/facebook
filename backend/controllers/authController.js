@@ -23,7 +23,7 @@ const publicUser = (user) => ({
 });
 
 const authResponse = (user) => ({
-  token: signToken(user._id),
+  token: signToken(user._id, user.tokenVersion),
   user: publicUser(user),
 });
 
@@ -104,9 +104,12 @@ export const updateProfile = async (req, res, next) => {
  */
 export const changePassword = async (req, res, next) => {
   try {
-    await changeUserPassword(req.user._id, req.body);
+    const user = await changeUserPassword(req.user._id, req.body);
 
-    return res.status(200).json({ message: 'Password changed successfully.' });
+    return res.status(200).json({
+      message: 'Password changed successfully.',
+      ...authResponse(user),
+    });
   } catch (error) {
     next(error);
   }

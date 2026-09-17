@@ -99,6 +99,13 @@ const userSchema = new mongoose.Schema(
       default: 0,
       min: [0, "Friends count cannot be negative."],
     },
+    tokenVersion: {
+      type: Number,
+      default: 0,
+    },
+    lastActiveAt: {
+      type: Date,
+    },
   },
   { timestamps: true },
 );

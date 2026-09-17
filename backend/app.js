@@ -14,6 +14,7 @@ import conversationRouter from './router/conversation.js'
 import storyRouter from './router/story.js'
 import notificationRouter from './router/notification.js'
 import { attachRealtime, REALTIME_PATH } from './lib/realtime.js';
+import { registerRealtimeHandlers } from './service/realtimeHandlers.js';
 import helmet from 'helmet';
 import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from './docs/index.js';
@@ -62,11 +63,12 @@ const start = async () => {
        await connectDB();
 
        const server = http.createServer(app);
-       attachRealtime(server, { allowedOrigins });
+       registerRealtimeHandlers();
+       const realtime = await attachRealtime(server, { allowedOrigins });
 
        server.listen(PORT, ()=>{
             console.log(`Server running at http://localhost:${PORT}`);
-            console.log(`Realtime at ws://localhost:${PORT}${REALTIME_PATH}`);
+            console.log(`Realtime at ws://localhost:${PORT}${REALTIME_PATH} (${realtime.bus} bus)`);
         })
     } catch (error) {;
       console.error('Failed to start server:', error.message);

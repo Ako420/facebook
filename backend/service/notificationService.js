@@ -30,10 +30,10 @@ export const notify = async ({ recipientId, actorId, type, postId, commentId, gr
       friendId,
     });
 
-    if (isOnline(recipientId)) {
+    if (await isOnline(recipientId)) {
       const full = await Notification.findById(row._id).populate(POPULATE).lean();
 
-      emitToUser(recipientId, "notification:new", {
+      await emitToUser(recipientId, "notification:new", {
         notification: publicNotification(full),
         unread: await unreadCountOf(recipientId),
       });
@@ -64,9 +64,9 @@ export const retract = async (filter) => {
     }
 
     for (const [recipientId, ids] of byRecipient) {
-      if (!isOnline(recipientId)) continue;
+      if (!(await isOnline(recipientId))) continue;
 
-      emitToUser(recipientId, "notification:removed", {
+      await emitToUser(recipientId, "notification:removed", {
         ids,
         unread: await unreadCountOf(recipientId),
       });
@@ -115,7 +115,7 @@ export const markNotificationReadService = async (userId, notificationId) => {
   }
 
   const unread = await unreadCountOf(userId);
-  emitToUser(userId, "notification:read", { ids: [String(row._id)], unread });
+  await emitToUser(userId, "notification:read", { ids: [String(row._id)], unread });
 
   return unread;
 };
@@ -126,7 +126,7 @@ export const markAllNotificationsReadService = async (userId) => {
     { $set: { readAt: new Date() } },
   );
 
-  emitToUser(userId, "notification:read", { ids: "all", unread: 0 });
+  await emitToUser(userId, "notification:read", { ids: "all", unread: 0 });
 
   return 0;
 };

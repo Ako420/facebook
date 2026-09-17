@@ -27,6 +27,13 @@ export const publicMessage = (message, viewerId) => {
   };
 };
 
+export const publicComment = (comment) => ({
+  id: comment._id,
+  content: comment.content,
+  createdAt: comment.createdAt,
+  author: publicAuthor(comment.userId),
+});
+
 export const publicNotification = (row) => {
   const post = populated(row.postId);
   const comment = populated(row.commentId);

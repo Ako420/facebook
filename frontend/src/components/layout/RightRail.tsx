@@ -4,24 +4,34 @@ import type { FriendEdge } from "../../features/friends/friendApi";
 import { formatPrice } from "../../lib/format";
 import { Icon } from "../icons/Icon";
 import { Avatar } from "../ui/Avatar";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { usePresenceMap } from "../../features/presence/PresenceProvider";
+import { useRealtimeEvent } from "../../features/realtime/RealtimeProvider";
 
 export function RightRail() {
   const navigate = useNavigate();
   const sponsored = listings.slice(0, 2);
   const [contacts, setContacts] = useState<FriendEdge[]>([]);
+  const presence = usePresenceMap();
+
+  const loadContacts = useCallback(() => {
+    listFriends()
+      .then((lists) => setContacts(lists.friends))
+      .catch(() => undefined);
+  }, []);
 
   useEffect(() => {
-    let active = true;
-    listFriends()
-      .then((lists) => active && setContacts(lists.friends))
-      .catch(() => undefined);
+    loadContacts();
+  }, [loadContacts]);
 
-    return () => {
-      active = false;
-    };
-  }, []);
+  useRealtimeEvent("friends:changed", loadContacts);
+
+  const sortedContacts = [...contacts].sort(
+    (a, b) =>
+      Number(Boolean(presence.get(b.user.id)?.online)) -
+      Number(Boolean(presence.get(a.user.id)?.online)),
+  );
 
   return (
     <aside className="sticky top-header hidden h-[calc(100dvh-var(--spacing-header))] w-rail shrink-0 overflow-y-auto px-2 py-4 lg:block">
@@ -84,7 +94,7 @@ export function RightRail() {
         {contacts.length === 0 && (
           <p className="px-2 py-1.5 text-sm text-ink-muted">No contacts yet.</p>
         )}
-        {contacts.map((edge) => {
+        {sortedContacts.map((edge) => {
           const person = toPerson(edge.user);
           return (
             <button
@@ -92,7 +102,12 @@ export function RightRail() {
               onClick={() => navigate(`/profile/${person.id}`)}
               className="flex items-center gap-3 rounded-lg px-2 py-1.5 text-left hover:bg-surface-hover"
             >
-              <Avatar src={person.avatar} alt={person.name} size={32} />
+              <Avatar
+                src={person.avatar}
+                alt={person.name}
+                size={32}
+                online={Boolean(presence.get(person.id)?.online)}
+              />
               <span className="truncate text-[0.95rem] font-medium">{person.name}</span>
             </button>
           );

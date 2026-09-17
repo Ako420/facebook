@@ -1,5 +1,6 @@
 import {
   createPostService,
+  getPostService,
   listPostsService,
   updatePost as updatePostService,
   deletePost as deletePostService,
@@ -62,6 +63,17 @@ export const listPosts = async (req, res, next) => {
     return res.status(200).json({
       posts: posts.map((post) => publicPost(post, req.user._id)),
     });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/** GET /api/posts/:id  (protected) */
+export const getPost = async (req, res, next) => {
+  try {
+    const post = await getPostService(req.params.id, req.user._id);
+
+    return res.status(200).json({ post: publicPost(post, req.user._id) });
   } catch (error) {
     next(error);
   }

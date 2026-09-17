@@ -170,8 +170,8 @@ export function MessagesProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => () => clearTimeout(refreshTimer.current), []);
 
-  useRealtimeEvent("ready", () => {
-    refresh();
+  useRealtimeEvent("ready", ({ resync }) => {
+    if (resync) refresh();
   });
   useRealtimeEvent("message:new", scheduleRefresh);
   useRealtimeEvent("message:updated", scheduleRefresh);

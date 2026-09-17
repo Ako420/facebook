@@ -3,7 +3,7 @@
   "info": {
     "title": "Facebook Clone API",
     "version": "1.0.0",
-    "description": "REST API for the Facebook clone: accounts, posts, reels, reactions, comments, friends, groups, messages and stories.\n\n**Signing in:** call `POST /auth/register` or `POST /auth/login`, copy the `token` from the response, then press **Authorize** above and paste it. Every route except register and login needs it.\n\n**Reels are posts.** A reel is a post with `type: \"reel\"` and exactly one video, so posts and reels share the same endpoints, including comments and reactions.\n\n**Realtime.** Open a WebSocket to `ws://localhost:3000/ws` and send `{ \"type\": \"auth\", \"token\": \"<jwt>\" }` as the first frame; the server answers `{ \"type\": \"ready\" }`. From then on it pushes `{ type, data }` events: `message:new`, `message:updated`, `message:hidden`, `conversation:read`, `conversation:updated`, `conversation:removed`, `notification:new`, `notification:read`, `notification:removed` and `friends:changed`. The socket only carries news — every write still goes through these REST routes — so refetch over REST after reconnecting. Close codes: 4001 bad or expired token, 4002 no auth frame within 5 seconds, 4003 account deactivated.\n\n**Rate limits:** `/api/auth/*` allows 20 requests per 15 minutes per IP; everything else allows 500."
+    "description": "REST API for the Facebook clone: accounts, posts, reels, reactions, comments, friends, groups, messages and stories.\n\n**Signing in:** call `POST /auth/register` or `POST /auth/login`, copy the `token` from the response, then press **Authorize** above and paste it. Every route except register and login needs it.\n\n**Reels are posts.** A reel is a post with `type: \"reel\"` and exactly one video, so posts and reels share the same endpoints, including comments and reactions.\n\n**Realtime.** Open a WebSocket to `ws://localhost:3000/ws` and send `{ \"type\": \"auth\", \"token\": \"<jwt>\", \"lastEventId\": \"<id or null>\" }` as the first frame. The server answers `{ \"type\": \"ready\", \"data\": { \"userId\", \"resync\" } }`.\n\nEvents about you carry an `id` (`message:new`, `message:updated`, `message:hidden`, `conversation:read`, `conversation:updated`, `conversation:removed`, `notification:new`, `notification:read`, `notification:removed`, `friends:changed`). Send the last id you saw when reconnecting: anything you missed in the last five minutes is replayed right after `ready`. When `resync` is true the gap could not be covered, so refetch over REST.\n\nLive-only events have no id and are never replayed: `typing`, `presence:changed` (friends only), and, for posts you subscribe to, `comment:new`, `comment:deleted` and `post:reactions`.\n\nAfter `ready` a client may send `{ \"type\": \"typing\", \"conversationId\" }`, `{ \"type\": \"subscribe\", \"topic\": \"post:<id>\" }` and `{ \"type\": \"unsubscribe\", \"topic\" }`. Subscriptions are checked against who may read the post. Every write still goes through these REST routes.\n\nClose codes: 1008 more than 40 frames in 10 seconds, 1011 realtime unavailable, 4001 bad, expired or revoked token, 4002 no auth frame within 5 seconds, 4003 account deactivated.\n\nSet `REDIS_URL` to run several backend instances: events, presence and the replay log then go through Redis 7+ instead of process memory.\n\n**Rate limits:** `/api/auth/*` allows 20 requests per 15 minutes per IP; everything else allows 500."
   },
   "servers": [
     {
@@ -319,7 +319,26 @@
             "format": "date-time"
           },
           "user": {
-            "$ref": "#/components/schemas/Person"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Person"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "online": {
+                    "type": "boolean",
+                    "description": "Accepted friends only."
+                  },
+                  "lastActiveAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "nullable": true,
+                    "description": "Accepted friends only."
+                  }
+                }
+              }
+            ]
           }
         }
       },
@@ -1338,6 +1357,7 @@
           "Auth"
         ],
         "summary": "Change your password",
+        "description": "Signs you out everywhere else: every token issued before the change stops working, over REST and on open sockets. The response carries a fresh token for this session.",
         "requestBody": {
           "required": true,
           "content": {
@@ -1376,6 +1396,13 @@
                     "message": {
                       "type": "string",
                       "example": "Password changed successfully."
+                    },
+                    "token": {
+                      "type": "string",
+                      "description": "Replaces the token you sent."
+                    },
+                    "user": {
+                      "$ref": "#/components/schemas/User"
                     }
                   }
                 }
@@ -1543,6 +1570,53 @@
       }
     },
     "/posts/{id}": {
+      "get": {
+        "tags": [
+          "Posts"
+        ],
+        "summary": "Read one post or reel",
+        "description": "What a notification links to. A post in a private group is only returned to its members.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The post id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The post.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "post": {
+                      "$ref": "#/components/schemas/Post"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
       "patch": {
         "tags": [
           "Posts"

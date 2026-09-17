@@ -3,6 +3,7 @@ import { ApiError } from "../utils/apiError.js";
 import { assertCanPostInGroup, assertCanReadGroup } from "./groupService.js";
 import { claimUploads, destroyMediaUrls } from "./uploadService.js";
 import { retract } from "./notificationService.js";
+import { isValidObjectId } from "../utils/validators.js";
 
 const toNumber = (value) =>
   value === undefined || value === null || value === "" ? undefined : Number(value);
@@ -67,6 +68,17 @@ export const listPostsService = async ({ limit = 20, userId, type, groupId, view
     .limit(Math.min(Number(limit) || 20, 50))
     .populate("userId", "name avatarUrl")
     .lean();
+};
+
+export const getPostService = async (id, viewerId) => {
+  if (!isValidObjectId(id)) throw ApiError.badRequest("Invalid Post id");
+
+  const post = await Post.findById(id).populate("userId", "name avatarUrl").lean();
+  if (!post) throw ApiError.notFound("Post not found");
+
+  if (post.groupId) await assertCanReadGroup(post.groupId, viewerId);
+
+  return post;
 };
 
 export const updatePost = async (id, body, ownerId) => {

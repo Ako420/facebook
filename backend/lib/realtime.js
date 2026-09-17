@@ -1,9 +1,12 @@
 import { WebSocket, WebSocketServer } from 'ws';
 import { authenticateToken } from '../middleware/auth.js';
+import { createBus } from './bus/index.js';
 
 export const REALTIME_PATH = '/ws';
 
 export const CLOSE = {
+  POLICY_VIOLATION: 1008,
+  UNAVAILABLE: 1011,
   AUTH_FAILED: 4001,
   AUTH_TIMEOUT: 4002,
   ACCOUNT_CLOSED: 4003,
@@ -11,34 +14,75 @@ export const CLOSE = {
 
 const AUTH_TIMEOUT_MS = 5_000;
 const HEARTBEAT_MS = 30_000;
+const OFFLINE_GRACE_MS = 5_000;
 const MAX_TIMEOUT_MS = 2 ** 31 - 1;
 const MAX_PAYLOAD_BYTES = 16 * 1024;
+const MAX_TOPICS_PER_SOCKET = 50;
+const RATE_WINDOW_MS = 10_000;
+const RATE_LIMIT = 40;
 
-const sockets = new Map();
+const userSockets = new Map();
+const topicSockets = new Map();
+const messageHandlers = new Map();
+const presenceListeners = [];
+let topicAuthorizer = async () => false;
 
 let wss = null;
+let bus = null;
 
-const register = (socket) => {
-  let open = sockets.get(socket.userId);
-  if (!open) {
-    open = new Set();
-    sockets.set(socket.userId, open);
+const addTo = (map, key, socket) => {
+  let sockets = map.get(key);
+  if (!sockets) {
+    sockets = new Set();
+    map.set(key, sockets);
   }
-  open.add(socket);
+  sockets.add(socket);
 };
 
-const unregister = (socket) => {
-  if (!socket.userId) return;
+const removeFrom = (map, key, socket) => {
+  const sockets = map.get(key);
+  if (!sockets) return;
 
-  const open = sockets.get(socket.userId);
-  if (!open) return;
-
-  open.delete(socket);
-  if (open.size === 0) sockets.delete(socket.userId);
+  sockets.delete(socket);
+  if (sockets.size === 0) map.delete(key);
 };
 
 const send = (socket, frame) => {
   if (socket.readyState === WebSocket.OPEN) socket.send(frame);
+};
+
+const sendAll = (sockets, frame) => {
+  if (!sockets) return;
+  for (const socket of sockets) send(socket, frame);
+};
+
+const deliver = (message) => {
+  switch (message.kind) {
+    case 'user':
+      sendAll(userSockets.get(message.userId), message.frame);
+      break;
+    case 'users':
+      for (const userId of message.userIds) sendAll(userSockets.get(userId), message.frame);
+      break;
+    case 'topic':
+      sendAll(topicSockets.get(message.topic), message.frame);
+      break;
+    case 'disconnect':
+      for (const socket of [...(userSockets.get(message.userId) ?? [])]) {
+        socket.close(message.code, message.reason);
+      }
+      break;
+  }
+};
+
+const logFailure = (label) => (error) => console.error(`${label}:`, error.message);
+
+const notifyPresence = (userId, online) => {
+  for (const listener of presenceListeners) {
+    Promise.resolve()
+      .then(() => listener(userId, online))
+      .catch(logFailure('Presence listener failed'));
+  }
 };
 
 const refuseUpgrade = (socket, status, text) => {
@@ -46,14 +90,49 @@ const refuseUpgrade = (socket, status, text) => {
   socket.destroy();
 };
 
-const authenticate = async (socket, raw, isBinary) => {
-  let message;
+const parse = (raw, isBinary) => {
+  if (isBinary) return null;
   try {
-    message = isBinary ? null : JSON.parse(raw.toString());
+    return JSON.parse(raw.toString());
   } catch {
-    message = null;
+    return null;
+  }
+};
+
+const withinRate = (socket) => {
+  const now = Date.now();
+  if (now - socket.rateStartedAt > RATE_WINDOW_MS) {
+    socket.rateStartedAt = now;
+    socket.rateCount = 0;
   }
 
+  socket.rateCount += 1;
+  return socket.rateCount <= RATE_LIMIT;
+};
+
+const register = async (socket) => {
+  addTo(userSockets, socket.userId, socket);
+  if (await bus.presenceUp(socket.userId)) notifyPresence(socket.userId, true);
+};
+
+const unregister = (socket) => {
+  for (const topic of socket.topics) removeFrom(topicSockets, topic, socket);
+  socket.topics.clear();
+
+  const { userId } = socket;
+  if (!userId) return;
+
+  removeFrom(userSockets, userId, socket);
+
+  setTimeout(() => {
+    bus
+      .presenceDown(userId)
+      .then((wentOffline) => wentOffline && notifyPresence(userId, false))
+      .catch(logFailure('Presence update failed'));
+  }, OFFLINE_GRACE_MS).unref();
+};
+
+const authenticate = async (socket, message) => {
   if (message?.type !== 'auth' || typeof message.token !== 'string') {
     socket.close(CLOSE.AUTH_FAILED, 'Send { type: "auth", token } first.');
     return;
@@ -71,7 +150,8 @@ const authenticate = async (socket, raw, isBinary) => {
 
   clearTimeout(socket.authTimer);
   socket.userId = String(session.user._id);
-  register(socket);
+  socket.userName = session.user.name;
+  await register(socket);
 
   if (session.payload.exp) {
     const remaining = session.payload.exp * 1000 - Date.now();
@@ -81,12 +161,48 @@ const authenticate = async (socket, raw, isBinary) => {
     );
   }
 
-  send(socket, JSON.stringify({ type: 'ready', data: { userId: socket.userId } }));
+  const replay = await bus.eventsSince(socket.userId, message.lastEventId);
+
+  send(socket, JSON.stringify({
+    type: 'ready',
+    data: { userId: socket.userId, resync: !replay.complete },
+  }));
+  for (const frame of replay.frames) send(socket, frame);
+};
+
+const subscribe = async (socket, topic) => {
+  if (typeof topic !== 'string' || socket.topics.has(topic)) return;
+  if (socket.topics.size >= MAX_TOPICS_PER_SOCKET) return;
+  if (!(await topicAuthorizer(topic, socket.userId))) return;
+  if (socket.readyState !== WebSocket.OPEN) return;
+
+  socket.topics.add(topic);
+  addTo(topicSockets, topic, socket);
+};
+
+const unsubscribe = (socket, topic) => {
+  if (!socket.topics.delete(topic)) return;
+  removeFrom(topicSockets, topic, socket);
+};
+
+const handleMessage = async (socket, message) => {
+  if (typeof message?.type !== 'string') return;
+
+  if (message.type === 'subscribe') return subscribe(socket, message.topic);
+  if (message.type === 'unsubscribe') return unsubscribe(socket, message.topic);
+
+  const handler = messageHandlers.get(message.type);
+  if (handler) await handler({ userId: socket.userId, userName: socket.userName }, message);
 };
 
 const onConnection = (socket) => {
   socket.userId = null;
+  socket.userName = '';
   socket.isAlive = true;
+  socket.topics = new Set();
+  socket.queue = Promise.resolve();
+  socket.rateStartedAt = Date.now();
+  socket.rateCount = 0;
 
   socket.authTimer = setTimeout(
     () => socket.close(CLOSE.AUTH_TIMEOUT, 'Authentication timed out.'),
@@ -98,12 +214,19 @@ const onConnection = (socket) => {
   });
 
   socket.on('message', (raw, isBinary) => {
-    if (socket.userId || socket.authenticating) return;
+    if (!withinRate(socket)) {
+      socket.close(CLOSE.POLICY_VIOLATION, 'Too many messages.');
+      return;
+    }
 
-    socket.authenticating = true;
-    authenticate(socket, raw, isBinary).finally(() => {
-      socket.authenticating = false;
-    });
+    const message = parse(raw, isBinary);
+
+    socket.queue = socket.queue
+      .then(() => (socket.userId ? handleMessage(socket, message) : authenticate(socket, message)))
+      .catch((error) => {
+        console.error('WebSocket message failed:', error.message);
+        if (!socket.userId) socket.close(CLOSE.UNAVAILABLE, 'Realtime is unavailable.');
+      });
   });
 
   socket.on('close', () => {
@@ -112,9 +235,7 @@ const onConnection = (socket) => {
     unregister(socket);
   });
 
-  socket.on('error', (error) => {
-    console.error('WebSocket error:', error.message);
-  });
+  socket.on('error', logFailure('WebSocket error'));
 };
 
 const startHeartbeat = () =>
@@ -130,7 +251,10 @@ const startHeartbeat = () =>
     }
   }, HEARTBEAT_MS);
 
-export const attachRealtime = (server, { allowedOrigins = [] } = {}) => {
+export const attachRealtime = async (server, { allowedOrigins = [] } = {}) => {
+  bus = await createBus();
+  await bus.start(deliver);
+
   wss = new WebSocketServer({ noServer: true, maxPayload: MAX_PAYLOAD_BYTES });
   wss.on('connection', onConnection);
 
@@ -151,34 +275,84 @@ export const attachRealtime = (server, { allowedOrigins = [] } = {}) => {
   });
 
   const heartbeat = startHeartbeat();
-  wss.on('close', () => clearInterval(heartbeat));
+  wss.on('close', () => {
+    clearInterval(heartbeat);
+    bus.close().catch(logFailure('Closing the realtime bus failed'));
+  });
 
-  return wss;
+  return { wss, bus: bus.kind };
 };
 
-export const emitToUser = (userId, type, data) => {
-  const open = sockets.get(String(userId));
-  if (!open) return;
-
-  const frame = JSON.stringify({ type, data });
-  for (const socket of open) send(socket, frame);
+export const onClientMessage = (type, handler) => {
+  messageHandlers.set(type, handler);
 };
 
-export const emitToUsers = (userIds, type, data) => {
-  const frame = JSON.stringify({ type, data });
+export const onPresenceChange = (listener) => {
+  presenceListeners.push(listener);
+};
 
-  for (const id of new Set(userIds.map(String))) {
-    const open = sockets.get(id);
-    if (!open) continue;
-    for (const socket of open) send(socket, frame);
+export const setTopicAuthorizer = (authorize) => {
+  topicAuthorizer = authorize;
+};
+
+export const isOnline = async (userId) => {
+  if (!bus) return false;
+  try {
+    return await bus.isOnline(String(userId));
+  } catch (error) {
+    logFailure('Presence lookup failed')(error);
+    return false;
   }
 };
 
-export const isOnline = (userId) => sockets.has(String(userId));
+export const emitToUser = async (userId, type, data) => {
+  if (!bus) return;
+  const id = String(userId);
 
-export const disconnectUser = (userId, code, reason) => {
-  const open = sockets.get(String(userId));
-  if (!open) return;
+  try {
+    if (!(await bus.isOnline(id))) return;
+    const frame = await bus.appendEvent(id, type, data);
+    await bus.publish({ kind: 'user', userId: id, frame });
+  } catch (error) {
+    logFailure(`Realtime ${type} failed`)(error);
+  }
+};
 
-  for (const socket of [...open]) socket.close(code, reason);
+export const emitToUsers = async (userIds, type, data) => {
+  const unique = [...new Set(userIds.map(String))];
+  await Promise.all(unique.map((userId) => emitToUser(userId, type, data)));
+};
+
+export const sendEphemeral = async (userIds, type, data) => {
+  if (!bus || userIds.length === 0) return;
+
+  try {
+    await bus.publish({
+      kind: 'users',
+      userIds: [...new Set(userIds.map(String))],
+      frame: JSON.stringify({ type, data }),
+    });
+  } catch (error) {
+    logFailure(`Realtime ${type} failed`)(error);
+  }
+};
+
+export const emitToTopic = async (topic, type, data) => {
+  if (!bus) return;
+
+  try {
+    await bus.publish({ kind: 'topic', topic, frame: JSON.stringify({ type, data }) });
+  } catch (error) {
+    logFailure(`Realtime ${type} failed`)(error);
+  }
+};
+
+export const disconnectUser = async (userId, code, reason) => {
+  if (!bus) return;
+
+  try {
+    await bus.publish({ kind: 'disconnect', userId: String(userId), code, reason });
+  } catch (error) {
+    logFailure('Realtime disconnect failed')(error);
+  }
 };

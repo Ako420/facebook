@@ -81,11 +81,7 @@ export function notificationHref(notification: ApiNotification, viewerId: string
     case "group-invite":
       return notification.group ? `/groups/${notification.group.id}` : "/groups";
     case "comment":
-    case "reaction": {
-      const post = notification.post;
-      if (post?.groupId) return `/groups/${post.groupId}`;
-      if (post?.type === "reel") return "/reels";
-      return `/profile/${viewerId}`;
-    }
+    case "reaction":
+      return notification.post ? `/posts/${notification.post.id}` : `/profile/${viewerId}`;
   }
 }

@@ -8,6 +8,7 @@ const FINAL_CLOSE_CODES = new Set([4001, 4003]);
 
 const BASE_DELAY_MS = 1_000;
 const MAX_DELAY_MS = 30_000;
+const REMEMBERED_EVENT_IDS = 500;
 
 export const realtimeUrl = () => {
   const url = new URL(api.defaults.baseURL ?? "http://localhost:3000/api");
@@ -17,11 +18,19 @@ export const realtimeUrl = () => {
   return url.toString();
 };
 
+export const compareEventIds = (a: string, b: string) => {
+  const [aTime, aSeq] = a.split("-").map(Number);
+  const [bTime, bSeq] = b.split("-").map(Number);
+  return aTime - bTime || aSeq - bSeq;
+};
+
 export interface RealtimeClient {
   start: () => void;
   stop: () => void;
   on: (type: string, listener: Listener) => () => void;
   onStatus: (listener: (status: RealtimeStatus) => void) => () => void;
+  send: (message: { type: string } & Record<string, unknown>) => void;
+  subscribe: (topic: string) => () => void;
 }
 
 export function createRealtimeClient(getToken: () => string | null): RealtimeClient {
@@ -31,7 +40,10 @@ export function createRealtimeClient(getToken: () => string | null): RealtimeCli
   let halted = false;
   let attempt = 0;
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
+  let lastEventId: string | null = null;
 
+  const seenEventIds = new Set<string>();
+  const topics = new Map<string, number>();
   const listeners = new Map<string, Set<Listener>>();
   const statusListeners = new Set<(status: RealtimeStatus) => void>();
 
@@ -43,6 +55,24 @@ export function createRealtimeClient(getToken: () => string | null): RealtimeCli
 
   const dispatch = (type: string, data: unknown) => {
     listeners.get(type)?.forEach((listener) => listener(data));
+  };
+
+  const send = (message: object) => {
+    if (status === "open" && socket?.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify(message));
+    }
+  };
+
+  const isDuplicate = (id: string) => {
+    if (seenEventIds.has(id)) return true;
+
+    seenEventIds.add(id);
+    if (seenEventIds.size > REMEMBERED_EVENT_IDS) {
+      seenEventIds.delete(seenEventIds.values().next().value as string);
+    }
+    if (!lastEventId || compareEventIds(id, lastEventId) > 0) lastEventId = id;
+
+    return false;
   };
 
   const cancelRetry = () => {
@@ -76,20 +106,22 @@ export function createRealtimeClient(getToken: () => string | null): RealtimeCli
     const ws = new WebSocket(realtimeUrl());
     socket = ws;
 
-    ws.onopen = () => ws.send(JSON.stringify({ type: "auth", token }));
+    ws.onopen = () => ws.send(JSON.stringify({ type: "auth", token, lastEventId }));
 
     ws.onmessage = (event) => {
-      let frame: { type?: unknown; data?: unknown };
+      let frame: { type?: unknown; id?: unknown; data?: unknown };
       try {
         frame = JSON.parse(String(event.data));
       } catch {
         return;
       }
       if (typeof frame?.type !== "string") return;
+      if (typeof frame.id === "string" && isDuplicate(frame.id)) return;
 
       if (frame.type === "ready") {
         attempt = 0;
         setStatus("open");
+        topics.forEach((_, topic) => send({ type: "subscribe", topic }));
       }
 
       dispatch(frame.type, frame.data);
@@ -160,6 +192,29 @@ export function createRealtimeClient(getToken: () => string | null): RealtimeCli
       statusListeners.add(listener);
       return () => {
         statusListeners.delete(listener);
+      };
+    },
+
+    send,
+
+    subscribe(topic) {
+      const count = topics.get(topic) ?? 0;
+      topics.set(topic, count + 1);
+      if (count === 0) send({ type: "subscribe", topic });
+
+      let active = true;
+      return () => {
+        if (!active) return;
+        active = false;
+
+        const remaining = (topics.get(topic) ?? 1) - 1;
+        if (remaining > 0) {
+          topics.set(topic, remaining);
+          return;
+        }
+
+        topics.delete(topic);
+        send({ type: "unsubscribe", topic });
       };
     },
   };

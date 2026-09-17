@@ -8,6 +8,8 @@ import { photo } from "../../data";
 import { previewOf } from "../../features/messages/messageApi";
 import type { ApiConversation } from "../../features/messages/messageApi";
 import { useMessages } from "../../features/messages/MessagesProvider";
+import { useAuth } from "../../features/auth/AuthContext";
+import { usePresence } from "../../features/presence/PresenceProvider";
 
 type Filter = "all" | "unread" | "groups";
 
@@ -31,6 +33,12 @@ export function ConversationRow({
   active?: boolean;
 }) {
   const unread = conversation.unreadCount > 0;
+  const { user: account } = useAuth();
+  const other =
+    conversation.type === "direct"
+      ? conversation.participants.find((row) => row.user.id !== account?.id)
+      : undefined;
+  const presence = usePresence(other?.user.id);
 
   return (
     <button
@@ -40,7 +48,12 @@ export function ConversationRow({
         active ? "bg-brand-soft" : "hover:bg-surface-hover",
       )}
     >
-      <Avatar src={chatAvatar(conversation)} alt={conversation.title} size={48} />
+      <Avatar
+        src={chatAvatar(conversation)}
+        alt={conversation.title}
+        size={48}
+        online={Boolean(presence?.online)}
+      />
 
       <span className="min-w-0 flex-1">
         <span
@@ -171,11 +184,11 @@ export function ChatsPanel({
         <div className="mx-gutter mb-2 rounded-card bg-surface-raised p-3">
           <p className="flex items-center gap-2 text-[0.95rem] font-semibold text-ink">
             <Icon name="bell-solid" size={14} className="text-brand" />
-            Get notified about new messages
+            Get notified about messages and notifications
           </p>
           <p className="pt-1 text-xs text-ink-muted">
-            Show a desktop notification when someone messages you while you are on
-            another tab.
+            Show a desktop notification when someone messages you or something
+            happens while you are on another tab.
           </p>
           <button
             onClick={alerts.request}
