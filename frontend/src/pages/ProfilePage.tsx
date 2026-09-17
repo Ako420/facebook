@@ -55,7 +55,7 @@ export default function ProfilePage() {
     setLoadingPosts(true);
 
     listPosts({ userId: backendId })
-      .then((fetched) => active && setLivePosts(fetched))
+      .then((feed) => active && setLivePosts(feed.posts))
       .catch(() => active && setLivePosts([]))
       .finally(() => active && setLoadingPosts(false));
 
@@ -105,7 +105,7 @@ export default function ProfilePage() {
 
     let active = true;
     listPosts({ userId: backendId, type: "reel" })
-      .then((fetched) => active && setReels(fetched))
+      .then((feed) => active && setReels(feed.posts))
       .catch(() => active && setReels([]));
 
     return () => {

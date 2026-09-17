@@ -3,7 +3,7 @@
   "info": {
     "title": "Facebook Clone API",
     "version": "1.0.0",
-    "description": "REST API for the Facebook clone: accounts, posts, reels, reactions, comments, friends, groups, messages and stories.\n\n**Signing in:** call `POST /auth/register` or `POST /auth/login`, copy the `token` from the response, then press **Authorize** above and paste it. Every route except register and login needs it.\n\n**Reels are posts.** A reel is a post with `type: \"reel\"` and exactly one video, so posts and reels share the same endpoints, including comments and reactions.\n\n**Realtime.** Open a WebSocket to `ws://localhost:3000/ws` and send `{ \"type\": \"auth\", \"token\": \"<jwt>\", \"lastEventId\": \"<id or null>\" }` as the first frame. The server answers `{ \"type\": \"ready\", \"data\": { \"userId\", \"resync\" } }`.\n\nEvents about you carry an `id` (`message:new`, `message:updated`, `message:hidden`, `conversation:read`, `conversation:updated`, `conversation:removed`, `notification:new`, `notification:read`, `notification:removed`, `friends:changed`). Send the last id you saw when reconnecting: anything you missed in the last five minutes is replayed right after `ready`. When `resync` is true the gap could not be covered, so refetch over REST.\n\nLive-only events have no id and are never replayed: `typing`, `presence:changed` (friends only), and, for posts you subscribe to, `comment:new`, `comment:deleted` and `post:reactions`.\n\nAfter `ready` a client may send `{ \"type\": \"typing\", \"conversationId\" }`, `{ \"type\": \"subscribe\", \"topic\": \"post:<id>\" }` and `{ \"type\": \"unsubscribe\", \"topic\" }`. Subscriptions are checked against who may read the post. Every write still goes through these REST routes.\n\nClose codes: 1008 more than 40 frames in 10 seconds, 1011 realtime unavailable, 4001 bad, expired or revoked token, 4002 no auth frame within 5 seconds, 4003 account deactivated.\n\nSet `REDIS_URL` to run several backend instances: events, presence and the replay log then go through Redis 7+ instead of process memory.\n\n**Rate limits:** `/api/auth/*` allows 20 requests per 15 minutes per IP; everything else allows 500."
+    "description": "REST API for the Facebook clone: accounts, posts, reels, reactions, comments, friends, groups, messages and stories.\n\n**Signing in:** call `POST /auth/register` or `POST /auth/login`, copy the `token` from the response, then press **Authorize** above and paste it. Every route except register and login needs it.\n\n**Reels are posts.** A reel is a post with `type: \"reel\"` and exactly one video, so posts and reels share the same endpoints, including comments and reactions.\n\n**Realtime.** Open a WebSocket to `ws://localhost:3000/ws` and send `{ \"type\": \"auth\", \"token\": \"<jwt>\", \"lastEventId\": \"<id or null>\" }` as the first frame. The server answers `{ \"type\": \"ready\", \"data\": { \"userId\", \"resync\" } }`.\n\nEvents about you carry an `id` (`message:new`, `message:updated`, `message:hidden`, `conversation:read`, `conversation:receipt`, `conversation:updated`, `conversation:removed`, `notification:new`, `notification:read`, `notification:removed`, `friends:changed`). Send the last id you saw when reconnecting: anything you missed in the last five minutes is replayed right after `ready`. When `resync` is true the gap could not be covered, so refetch over REST.\n\n`conversation:receipt` carries `{ conversationId, userIds, kind, at }`, where kind is \"delivered\" (it reached their open tab) or \"seen\" (they opened the chat). Fold it into the participants of that conversation to draw one tick, two ticks, or two blue ticks.\n\nLive-only events have no id and are never replayed: `typing`, `presence:changed` (friends only), and, for posts you subscribe to, `comment:new`, `comment:deleted` and `post:reactions`.\n\nAfter `ready` a client may send `{ \"type\": \"typing\", \"conversationId\" }`, `{ \"type\": \"subscribe\", \"topic\": \"post:<id>\" }` and `{ \"type\": \"unsubscribe\", \"topic\" }`. Subscriptions are checked against who may read the post. Every write still goes through these REST routes.\n\nClose codes: 1008 more than 40 frames in 10 seconds, 1011 realtime unavailable, 4001 bad, expired or revoked token, 4002 no auth frame within 5 seconds, 4003 account deactivated.\n\nSet `REDIS_URL` to run several backend instances: events, presence and the replay log then go through Redis 7+ instead of process memory.\n\n**Rate limits:** `/api/auth/*` allows 20 requests per 15 minutes per IP; everything else allows 500."
   },
   "servers": [
     {
@@ -270,6 +270,10 @@
             "nullable": true,
             "description": "Set when the post belongs to a group; null for the main feed."
           },
+          "seen": {
+            "type": "boolean",
+            "description": "True when this viewer has already had it in front of them."
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time"
@@ -516,11 +520,17 @@
             "type": "string",
             "format": "date-time"
           },
+          "lastDeliveredAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "How far a message reached one of their open tabs. Compare it with the createdAt of a message for the second tick."
+          },
           "lastReadAt": {
             "type": "string",
             "format": "date-time",
             "nullable": true,
-            "description": "How far this person has read — use it to show read receipts."
+            "description": "How far this person has read — the blue ticks."
           },
           "user": {
             "$ref": "#/components/schemas/Person"
@@ -1424,7 +1434,7 @@
           "Posts"
         ],
         "summary": "List posts or reels",
-        "description": "Newest first. A reel is a post with type \"reel\", so the same endpoint serves both feeds.",
+        "description": "Newest first, except that anything you have already seen moves to the back, the one you saw longest ago first. So a reload brings posts you have not seen yet, and once you have seen everything the feed repeats instead of running dry.\n\nTell the server what has been seen with POST /posts/views. A reel is a post with type \"reel\", so the same endpoint serves both feeds.",
         "parameters": [
           {
             "name": "type",
@@ -1478,6 +1488,10 @@
                       "items": {
                         "$ref": "#/components/schemas/Post"
                       }
+                    },
+                    "caughtUp": {
+                      "type": "boolean",
+                      "description": "True once the page contains posts you have already seen."
                     }
                   }
                 }
@@ -1554,6 +1568,66 @@
                     },
                     "post": {
                       "$ref": "#/components/schemas/Post"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/posts/views": {
+      "post": {
+        "tags": [
+          "Posts"
+        ],
+        "summary": "Mark posts as seen",
+        "description": "Send the ids of posts or reels that have been in front of the viewer, at most 50 at a time. Sending the same id twice is harmless. Seen posts sink to the bottom of the next feed load.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "postIds"
+                ],
+                "properties": {
+                  "postIds": {
+                    "type": "array",
+                    "maxItems": 50,
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "example": "Marked as seen."
+                    },
+                    "added": {
+                      "type": "integer",
+                      "description": "How many were new.",
+                      "example": 3
                     }
                   }
                 }

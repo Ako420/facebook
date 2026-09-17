@@ -9,7 +9,7 @@ import {
 } from "react";
 import type { ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
-import { listConversations, totalUnread } from "./messageApi";
+import { applyReceipt, listConversations, totalUnread } from "./messageApi";
 import type { ApiConversation } from "./messageApi";
 import { useAuth } from "../auth/AuthContext";
 import { useRealtimeEvent, useRealtimeStatus } from "../realtime/RealtimeProvider";
@@ -186,6 +186,12 @@ export function MessagesProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useRealtimeEvent("conversation:read", ({ conversationId }) => clearUnread(conversationId));
+
+  useRealtimeEvent("conversation:receipt", (receipt) => {
+    setConversations((current) =>
+      current.map((row) => (row.id === receipt.conversationId ? applyReceipt(row, receipt) : row)),
+    );
+  });
 
   const setActiveConversation = useCallback((id: string | null) => {
     activeId.current = id;

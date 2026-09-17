@@ -31,6 +31,7 @@ const publicParticipant = (row) => ({
   role: row.role,
   joinedAt: row.createdAt,
   lastReadAt: row.lastReadAt ?? null,
+  lastDeliveredAt: row.lastDeliveredAt ?? null,
   user: publicPerson(row.userId),
 });
 

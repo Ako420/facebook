@@ -21,6 +21,7 @@ import { deletePost, toReactionCounts } from "../../features/posts/postApi";
 import type { ApiPost } from "../../features/posts/postApi";
 import { useAuth } from "../../features/auth/AuthContext";
 import { useRealtimeEvent } from "../../features/realtime/RealtimeProvider";
+import { useSeen } from "../../features/posts/seen";
 
 const privacyIcon: Record<Post["privacy"], IconName> = {
   public: "globe",
@@ -75,6 +76,7 @@ export function PostCard({
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(post.text);
   const menuRef = useRef<HTMLDivElement>(null);
+  const seenRef = useSeen(post.id);
 
   const isMine = user?.id === post.author.id;
 
@@ -132,7 +134,8 @@ export function PostCard({
   };
 
   return (
-    <Card>
+    <div ref={seenRef}>
+      <Card>
       <header className="flex items-start gap-2 px-gutter pt-3">
         <Avatar
           src={post.author.avatar}
@@ -330,6 +333,7 @@ export function PostCard({
           />
         </div>
       )}
-    </Card>
+      </Card>
+    </div>
   );
 }

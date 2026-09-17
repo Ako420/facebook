@@ -30,6 +30,9 @@ const conversationMemberSchema = new mongoose.Schema(
     lastReadAt: {
       type: Date,
     },
+    lastDeliveredAt: {
+      type: Date,
+    },
     clearedAt: {
       type: Date,
     },

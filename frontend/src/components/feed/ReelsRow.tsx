@@ -21,7 +21,7 @@ export function ReelsRow() {
     let active = true;
 
     listPosts({ type: "reel", limit: 12 })
-      .then((posts) => active && setReels(posts.map(toReel)))
+      .then((feed) => active && setReels(feed.posts.map(toReel)))
       .catch((caught) => active && setError(toApiFailure(caught).message))
       .finally(() => active && setLoading(false));
 

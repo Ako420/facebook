@@ -13,6 +13,7 @@ import { toPerson } from "../../features/friends/friendApi";
 import { uploadMedia } from "../../features/posts/postApi";
 import type { UploadedMedia } from "../../features/posts/postApi";
 import {
+  applyReceipt,
   editMessage,
   fetchConversation,
   hideMessage,
@@ -21,7 +22,8 @@ import {
   sendMessage,
   unsendMessage,
 } from "../../features/messages/messageApi";
-import type { ApiConversation, ApiMessage } from "../../features/messages/messageApi";
+import { receiptFor } from "../../features/messages/messageApi";
+import type { ApiConversation, ApiMessage, Receipt } from "../../features/messages/messageApi";
 import { useMessages } from "../../features/messages/MessagesProvider";
 import { useRealtimeEvent, useRealtimeSend } from "../../features/realtime/RealtimeProvider";
 import { usePresence } from "../../features/presence/PresenceProvider";
@@ -65,15 +67,110 @@ function Attachment({ media }: { media: UploadedMedia }) {
   );
 }
 
+type Outgoing = {
+  id: string;
+  text: string;
+  files: File[];
+  previews: UploadedMedia[];
+  state: "sending" | "failed";
+  error?: string;
+};
+
+/** A local stand-in for a file, so an attachment shows while it uploads. */
+const localPreview = (file: File): UploadedMedia => ({
+  type: file.type.startsWith("video/") ? "video" : "image",
+  url: URL.createObjectURL(file),
+  publicId: "",
+});
+
+const forget = (item: Outgoing) => {
+  item.previews.forEach((media) => URL.revokeObjectURL(media.url));
+};
+
+function OutgoingBubble({
+  item,
+  onRetry,
+  onDiscard,
+}: {
+  item: Outgoing;
+  onRetry: () => void;
+  onDiscard: () => void;
+}) {
+  const failed = item.state === "failed";
+
+  return (
+    <li className="flex flex-row-reverse items-end gap-2">
+      <span className="w-7 shrink-0" />
+
+      <div className="flex min-w-0 max-w-[min(28rem,78%)] flex-col items-end">
+        <div
+          className={cn(
+            "flex min-w-0 flex-col gap-1 rounded-card bg-brand px-3 py-2 text-white",
+            failed ? "opacity-60" : "opacity-80",
+          )}
+        >
+          {item.previews.map((media) => (
+            <Attachment key={media.url} media={media} />
+          ))}
+          {item.text && (
+            <p className="text-[0.95rem] whitespace-pre-wrap wrap-anywhere">{item.text}</p>
+          )}
+        </div>
+
+        {failed ? (
+          <p className="flex items-center gap-2 px-1 pt-0.5 text-[0.65rem] text-alert">
+            <span title={item.error}>Not sent</span>
+            <button onClick={onRetry} className="font-semibold underline hover:no-underline">
+              Retry
+            </button>
+            <button onClick={onDiscard} className="font-semibold underline hover:no-underline">
+              Remove
+            </button>
+          </p>
+        ) : (
+          <p className="flex items-center gap-1 px-1 pt-0.5 text-[0.65rem] text-ink-faint">
+            <span>Sending</span>
+            <span title="Sending" aria-label="Sending">
+              <Icon name="clock" size={11} />
+            </span>
+          </p>
+        )}
+      </div>
+
+      <span className="w-7 shrink-0" />
+    </li>
+  );
+}
+
+const receiptLabel: Record<Receipt, string> = {
+  sent: "Sent",
+  delivered: "Delivered",
+  read: "Read",
+};
+
+function ReceiptTicks({ receipt }: { receipt: Receipt }) {
+  return (
+    <span title={receiptLabel[receipt]} aria-label={receiptLabel[receipt]}>
+      <Icon
+        name={receipt === "sent" ? "check" : "check-double"}
+        size={11}
+        className={receipt === "read" ? "text-brand" : "text-ink-faint"}
+      />
+    </span>
+  );
+}
+
 function Bubble({
   message,
   showAvatar,
+  receipt,
   onEdit,
   onUnsend,
   onHide,
 }: {
   message: ApiMessage;
   showAvatar: boolean;
+  receipt: Receipt | null;
   onEdit: () => void;
   onUnsend: () => void;
   onHide: () => void;
@@ -121,9 +218,10 @@ function Bubble({
           </div>
         )}
 
-        <p className="px-1 pt-0.5 text-[0.65rem] text-ink-faint">
-          {formatClock(message.createdAt)}
-          {message.editedAt && !message.deleted && " · edited"}
+        <p className="flex items-center gap-1 px-1 pt-0.5 text-[0.65rem] text-ink-faint">
+          <span>{formatClock(message.createdAt)}</span>
+          {message.editedAt && !message.deleted && <span>· edited</span>}
+          {receipt && <ReceiptTicks receipt={receipt} />}
         </p>
       </div>
 
@@ -202,11 +300,17 @@ export function MessageThread({ conversationId }: { conversationId: string }) {
   const [text, setText] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [sending, setSending] = useState(false);
+  const [outbox, setOutbox] = useState<Outgoing[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [removing, setRemoving] = useState<Removal | null>(null);
 
   const bottom = useRef<HTMLDivElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+
+  const outboxRef = useRef<Outgoing[]>([]);
+  outboxRef.current = outbox;
+
+  useEffect(() => () => outboxRef.current.forEach(forget), []);
 
   const sendRealtime = useRealtimeSend();
   const lastTypingSent = useRef(0);
@@ -257,7 +361,7 @@ export function MessageThread({ conversationId }: { conversationId: string }) {
 
   useEffect(() => {
     if (!loading) scrollDown();
-  }, [loading, messages.length, scrollDown]);
+  }, [loading, messages.length, outbox.length, scrollDown]);
 
   /** Pulls anything that landed since user last open chat, then marks it read. */
   useEffect(() => {
@@ -295,6 +399,22 @@ export function MessageThread({ conversationId }: { conversationId: string }) {
     if (chatId !== conversationId) return;
 
     setMessages((current) => mergeMessages(current, [message]));
+
+    if (message.fromViewer) {
+      setOutbox((current) => {
+        const index = current.findIndex(
+          (row) =>
+            row.state === "sending" &&
+            row.text === message.text &&
+            row.files.length === message.attachments.length,
+        );
+        if (index < 0) return current;
+
+        forget(current[index]);
+        return current.filter((_, position) => position !== index);
+      });
+    }
+
     setTypists((current) => {
       if (!current[message.sender.id]) return current;
       const next = { ...current };
@@ -352,6 +472,11 @@ export function MessageThread({ conversationId }: { conversationId: string }) {
       .catch(() => undefined);
   });
 
+  useRealtimeEvent("conversation:receipt", (receipt) => {
+    if (receipt.conversationId !== conversationId) return;
+    setConversation((current) => (current ? applyReceipt(current, receipt) : current));
+  });
+
   useRealtimeEvent("conversation:removed", ({ conversationId: chatId }) => {
     if (chatId !== conversationId) return;
     setConversation(null);
@@ -379,38 +504,78 @@ export function MessageThread({ conversationId }: { conversationId: string }) {
     }
   };
 
-  const submit = async () => {
-    const trimmed = text.trim();
-    if ((!trimmed && files.length === 0) || sending) return;
+  const discard = (item: Outgoing) => {
+    forget(item);
+    setOutbox((current) => current.filter((row) => row.id !== item.id));
+  };
+
+  const deliver = async (item: Outgoing) => {
+    setOutbox((current) =>
+      current.map((row) =>
+        row.id === item.id ? { ...row, state: "sending", error: undefined } : row,
+      ),
+    );
+
+    try {
+      const attachments = item.files.length > 0 ? await uploadMedia(item.files) : undefined;
+      const sent = await sendMessage(conversationId, {
+        ...(item.text ? { text: item.text } : {}),
+        ...(attachments ? { attachments } : {}),
+      });
+
+      setMessages((current) => mergeMessages(current, [sent]));
+      discard(item);
+      refresh();
+    } catch (caught) {
+      const failure = toApiFailure(caught);
+      setOutbox((current) =>
+        current.map((row) =>
+          row.id === item.id ? { ...row, state: "failed", error: failure.message } : row,
+        ),
+      );
+    }
+  };
+
+  const applyEdit = async (trimmed: string) => {
+    if (!editingId || sending) return;
 
     setSending(true);
     setError("");
 
     try {
-      if (editingId) {
-        const updated = await editMessage(conversationId, editingId, trimmed);
-        setMessages((current) =>
-          current.map((row) => (row.id === updated.id ? updated : row)),
-        );
-        setEditingId(null);
-      } else {
-        const attachments = files.length > 0 ? await uploadMedia(files) : undefined;
-        const sent = await sendMessage(conversationId, {
-          ...(trimmed ? { text: trimmed } : {}),
-          ...(attachments ? { attachments } : {}),
-        });
-        setMessages((current) => mergeMessages(current, [sent]));
-      }
-
+      const updated = await editMessage(conversationId, editingId, trimmed);
+      setMessages((current) => current.map((row) => (row.id === updated.id ? updated : row)));
+      setEditingId(null);
       setText("");
       setFiles([]);
-      lastTypingSent.current = 0;
-      refresh();
     } catch (caught) {
       setError(toApiFailure(caught).message);
     } finally {
       setSending(false);
     }
+  };
+
+  const submit = async () => {
+    const trimmed = text.trim();
+    if (!trimmed && files.length === 0) return;
+
+    if (editingId) return applyEdit(trimmed);
+
+    const item: Outgoing = {
+      id: `outgoing-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      text: trimmed,
+      files,
+      previews: files.map(localPreview),
+      state: "sending",
+    };
+
+    setOutbox((current) => [...current, item]);
+    setText("");
+    setFiles([]);
+    setError("");
+    lastTypingSent.current = 0;
+
+    return deliver(item);
   };
 
   const remove = async () => {
@@ -525,7 +690,7 @@ export function MessageThread({ conversationId }: { conversationId: string }) {
           </div>
         )}
 
-        {messages.length === 0 ? (
+        {messages.length === 0 && outbox.length === 0 ? (
           <div className="grid place-items-center gap-2 py-10 text-center">
             <Avatar src={chatAvatar(conversation)} alt={conversation.title} size={64} />
             <p className="text-[0.95rem] font-semibold text-ink">{conversation.title}</p>
@@ -540,12 +705,30 @@ export function MessageThread({ conversationId }: { conversationId: string }) {
                 key={message.id}
                 message={message}
                 showAvatar={messages[index + 1]?.sender.id !== message.sender.id}
+                receipt={
+                  message.fromViewer && !message.deleted
+                    ? receiptFor(conversation, message.createdAt, account?.id ?? "")
+                    : null
+                }
                 onEdit={() => {
                   setEditingId(message.id);
                   setText(message.text);
                 }}
                 onUnsend={() => setRemoving({ message, scope: "everyone" })}
                 onHide={() => setRemoving({ message, scope: "me" })}
+              />
+            ))}
+          </ul>
+        )}
+
+        {outbox.length > 0 && (
+          <ul className="flex flex-col gap-2 pt-2">
+            {outbox.map((item) => (
+              <OutgoingBubble
+                key={item.id}
+                item={item}
+                onRetry={() => deliver(item)}
+                onDiscard={() => discard(item)}
               />
             ))}
           </ul>

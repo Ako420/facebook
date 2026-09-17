@@ -1,4 +1,6 @@
+import mongoose from "mongoose";
 import { Post } from "../model/post.js";
+import { PostView } from "../model/postView.js";
 import { ApiError } from "../utils/apiError.js";
 import { assertCanPostInGroup, assertCanReadGroup } from "./groupService.js";
 import { claimUploads, destroyMediaUrls } from "./uploadService.js";
@@ -56,18 +58,88 @@ export const createPostService = async (userId, body) => {
 };
 
 
+const objectId = (value) => new mongoose.Types.ObjectId(String(value));
+
+/**
+ * Newest first, but anything this person has already seen drops to the back,
+ * oldest look first — so a refresh brings new posts up, and once everything
+ * has been seen the feed starts again instead of running dry.
+ */
 export const listPostsService = async ({ limit = 20, userId, type, groupId, viewerId } = {}) => {
   if (groupId) await assertCanReadGroup(groupId, viewerId);
 
-  const query = type === "reel" ? { type: "reel" } : { type: { $ne: "reel" } };
-  if (userId) query.userId = userId;
-  query.groupId = groupId || null;
+  const match = type === "reel" ? { type: "reel" } : { type: { $ne: "reel" } };
+  if (userId) match.userId = objectId(userId);
+  match.groupId = groupId ? objectId(groupId) : null;
 
-  return Post.find(query)
-    .sort({ createdAt: -1 })
-    .limit(Math.min(Number(limit) || 20, 50))
-    .populate("userId", "name avatarUrl")
+  const size = Math.min(Number(limit) || 20, 50);
+
+  const posts = await Post.aggregate([
+    { $match: match },
+    {
+      $lookup: {
+        from: PostView.collection.name,
+        let: { postId: "$_id" },
+        pipeline: [
+          {
+            $match: {
+              $expr: {
+                $and: [{ $eq: ["$postId", "$$postId"] }, { $eq: ["$userId", objectId(viewerId)] }],
+              },
+            },
+          },
+          { $project: { createdAt: 1 } },
+        ],
+        as: "views",
+      },
+    },
+    { $addFields: { seenAt: { $arrayElemAt: ["$views.createdAt", 0] } } },
+    { $sort: { seenAt: 1, createdAt: -1 } },
+    { $limit: size },
+    { $project: { views: 0 } },
+  ]);
+
+  await Post.populate(posts, { path: "userId", select: "name avatarUrl" });
+
+  return { posts, caughtUp: posts.some((post) => post.seenAt) };
+};
+
+const MAX_VIEWS_PER_CALL = 50;
+
+/** Records that these posts have now been in front of this person. */
+export const markPostsViewedService = async (userId, postIds) => {
+  const wanted = [...new Set((Array.isArray(postIds) ? postIds : [postIds]).map(String))].filter(
+    Boolean,
+  );
+  if (wanted.length === 0) return 0;
+
+  if (wanted.length > MAX_VIEWS_PER_CALL) {
+    throw ApiError.badRequest(`You can mark at most ${MAX_VIEWS_PER_CALL} posts at a time.`);
+  }
+
+  if (wanted.some((id) => !isValidObjectId(id))) {
+    throw ApiError.badRequest("Invalid Post id");
+  }
+
+  const seen = await PostView.find({ userId, postId: { $in: wanted } })
+    .select("postId")
     .lean();
+
+  const known = new Set(seen.map((row) => String(row.postId)));
+  const fresh = wanted.filter((id) => !known.has(id));
+  if (fresh.length === 0) return 0;
+
+  try {
+    await PostView.insertMany(
+      fresh.map((postId) => ({ postId, userId })),
+      { ordered: false },
+    );
+  } catch (error) {
+    // Another tab recorded the same look a moment earlier.
+    if (error?.code !== 11000) throw error;
+  }
+
+  return fresh.length;
 };
 
 export const getPostService = async (id, viewerId) => {
@@ -123,6 +195,7 @@ export const deletePost = async (id, ownerId) => {
 
   await post.deleteOne();
   await retract({ postId: post._id });
+  await PostView.deleteMany({ postId: post._id });
 
   // The post is gone either way; a provider that is down must not undo that.
   await destroyMediaUrls([...(post.imageUrl || []), ...(post.videoUrl || [])]);

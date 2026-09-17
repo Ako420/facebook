@@ -7,7 +7,18 @@ export interface ApiParticipant {
   role: "admin" | "member";
   joinedAt: string;
   lastReadAt: string | null;
+  /** When the message reached one of their open tabs. */
+  lastDeliveredAt: string | null;
   user: ApiPerson;
+}
+
+export type Receipt = "sent" | "delivered" | "read";
+
+export interface ReceiptUpdate {
+  conversationId: string;
+  userIds: string[];
+  kind: "delivered" | "seen";
+  at: string;
 }
 
 /** A conversation as conversationController's publicConversation() returns it. */
@@ -163,6 +174,60 @@ export const hideMessage = async (id: string, messageId: string) => {
 
 export const markConversationRead = async (id: string) => {
   await api.post(`/conversations/${id}/read`);
+};
+
+const everyoneReached = (
+  participants: ApiParticipant[],
+  field: "lastReadAt" | "lastDeliveredAt",
+  sentAt: string,
+) => {
+  if (participants.length === 0) return false;
+
+  const sent = Date.parse(sentAt);
+  return participants.every((row) => {
+    const stamp = row[field];
+    return Boolean(stamp) && Date.parse(stamp as string) >= sent;
+  });
+};
+
+/**
+ * One tick until it reaches them, two once it has, blue once they have read it.
+ * In a group chat every other member has to reach the step.
+ */
+export const receiptFor = (
+  conversation: ApiConversation,
+  sentAt: string,
+  viewerId: string,
+): Receipt => {
+  const others = conversation.participants.filter((row) => row.user.id !== viewerId);
+
+  if (everyoneReached(others, "lastReadAt", sentAt)) return "read";
+  if (everyoneReached(others, "lastDeliveredAt", sentAt)) return "delivered";
+  return "sent";
+};
+
+const later = (current: string | null, next: string) =>
+  !current || Date.parse(next) > Date.parse(current) ? next : current;
+
+/** Folds a conversation:receipt event into the participants it names. */
+export const applyReceipt = (
+  conversation: ApiConversation,
+  receipt: ReceiptUpdate,
+): ApiConversation => {
+  const touched = new Set(receipt.userIds);
+
+  return {
+    ...conversation,
+    participants: conversation.participants.map((row) =>
+      touched.has(row.user.id)
+        ? {
+            ...row,
+            lastDeliveredAt: later(row.lastDeliveredAt, receipt.at),
+            lastReadAt: receipt.kind === "seen" ? later(row.lastReadAt, receipt.at) : row.lastReadAt,
+          }
+        : row,
+    ),
+  };
 };
 
 /** Total unread across the inbox, without a second round trip. */

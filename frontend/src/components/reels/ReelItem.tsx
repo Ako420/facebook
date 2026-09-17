@@ -12,6 +12,7 @@ import { useAuth } from "../../features/auth/AuthContext";
 import { deletePost } from "../../features/posts/postApi";
 import { removeReaction, setReaction } from "../../features/posts/engagementApi";
 import { LiveCommentThread } from "../feed/LiveCommentThread";
+import { reportSeen } from "../../features/posts/seen";
 
 function Action({
   name,
@@ -101,11 +102,15 @@ export function ReelItem({
     const element = videoRef.current;
     if (!element) return;
 
+    let dwell: ReturnType<typeof setTimeout> | undefined;
+
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
           element.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
+          dwell = setTimeout(() => reportSeen(reel.id), 1_000);
         } else {
+          clearTimeout(dwell);
           element.pause();
           setPlaying(false);
         }
@@ -114,8 +119,11 @@ export function ReelItem({
     );
 
     observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
+    return () => {
+      clearTimeout(dwell);
+      observer.disconnect();
+    };
+  }, [reel.id]);
 
   const togglePlay = () => {
     const element = videoRef.current;

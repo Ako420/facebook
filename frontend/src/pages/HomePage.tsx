@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Composer } from "../components/feed/Composer";
 import { usePublishedPosts } from "../features/uploads/UploadsProvider";
 import { PostCard } from "../components/feed/PostCard";
@@ -19,7 +19,7 @@ export default function HomePage() {
     let active = true;
 
     listPosts()
-      .then((fetched) => active && setPosts(fetched))
+      .then((feed) => active && setPosts(feed.posts))
       .catch((caught) => active && setError(toApiFailure(caught).message))
       .finally(() => active && setLoading(false));
 
@@ -62,14 +62,22 @@ export default function HomePage() {
           </Card>
         )}
 
-        {posts.map((post) => (
-          <PostCard
-            key={post.id}
-            post={toFeedPost(post)}
-            onDeleted={(id) =>
-              setPosts((current) => current.filter((item) => item.id !== id))
-            }
-          />
+        {posts.map((post, index) => (
+          <Fragment key={post.id}>
+            {post.seen && !posts[index - 1]?.seen && (
+              <p className="flex items-center gap-3 px-2 text-xs font-semibold text-ink-muted">
+                <span className="h-px flex-1 bg-line" />
+                You're all caught up · showing older posts again
+                <span className="h-px flex-1 bg-line" />
+              </p>
+            )}
+            <PostCard
+              post={toFeedPost(post)}
+              onDeleted={(id) =>
+                setPosts((current) => current.filter((item) => item.id !== id))
+              }
+            />
+          </Fragment>
         ))}
       </div>
     </PageShell>

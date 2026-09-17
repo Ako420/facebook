@@ -1,6 +1,7 @@
 import { Group } from "../model/group.js";
 import { GroupMember } from "../model/groupMember.js";
 import { Post } from "../model/post.js";
+import { PostView } from "../model/postView.js";
 import { User } from "../model/user.js";
 import { ApiError } from "../utils/apiError.js";
 import { atomically, opts } from "../utils/transaction.js";
@@ -245,6 +246,7 @@ export const deleteGroupService = async (groupId, userId) => {
   await retract({
     $or: [{ groupId: group._id }, { postId: { $in: posts.map((post) => post._id) } }],
   });
+  await PostView.deleteMany({ postId: { $in: posts.map((post) => post._id) } });
 
   await destroyMediaUrls(
     posts.flatMap((post) => [...(post.imageUrl || []), ...(post.videoUrl || [])]),

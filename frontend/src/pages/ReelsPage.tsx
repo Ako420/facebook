@@ -27,7 +27,7 @@ export default function ReelsPage() {
 
   useEffect(() => {
     listPosts({ type: "reel" })
-      .then(setMine)
+      .then((feed) => setMine(feed.posts))
       .catch(() => setMine([]));
   }, []);
 

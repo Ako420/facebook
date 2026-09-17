@@ -92,7 +92,7 @@ export default function GroupPage() {
         listPosts({ groupId: id }),
       ]);
       setMembers(people);
-      setPosts(feed);
+      setPosts(feed.posts);
 
       setInvited(found.isMember ? await listGroupMembers(id, { status: "invited" }) : []);
       setRequests(

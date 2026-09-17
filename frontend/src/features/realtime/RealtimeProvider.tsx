@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { readToken } from "../../lib/api";
 import { createRealtimeClient } from "../../lib/realtime";
 import type { RealtimeClient, RealtimeStatus } from "../../lib/realtime";
-import type { ApiMessage } from "../messages/messageApi";
+import type { ApiMessage, ReceiptUpdate } from "../messages/messageApi";
 import type { ApiNotification } from "../notifications/notificationApi";
 import type { ApiComment } from "../posts/engagementApi";
 
@@ -13,6 +13,7 @@ export interface RealtimeEvents {
   "message:updated": { conversationId: string; message: ApiMessage };
   "message:hidden": { conversationId: string; messageId: string };
   "conversation:read": { conversationId: string };
+  "conversation:receipt": ReceiptUpdate;
   "conversation:updated": { conversationId: string };
   "conversation:removed": { conversationId: string };
   "notification:new": { notification: ApiNotification; unread: number };

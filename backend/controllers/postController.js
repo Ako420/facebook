@@ -2,6 +2,7 @@ import {
   createPostService,
   getPostService,
   listPostsService,
+  markPostsViewedService,
   updatePost as updatePostService,
   deletePost as deletePostService,
 } from '../service/postService.js';
@@ -24,6 +25,7 @@ const publicPost = (post, viewerId) => {
     reactions: summarizeReactions(post, viewerId),
     commentCount: post.commentCount ?? 0,
     groupId: post.groupId ?? null,
+    seen: Boolean(post.seenAt),
     createdAt: post.createdAt,
     author: author
       ? { id: author._id, name: author.name, avatarUrl: author.avatarUrl }
@@ -52,7 +54,7 @@ export const createPost = async (req, res, next) => {
 /** GET /api/posts  (protected) */
 export const listPosts = async (req, res, next) => {
   try {
-    const posts = await listPostsService({
+    const { posts, caughtUp } = await listPostsService({
       limit: req.query.limit,
       userId: req.query.userId,
       type: req.query.type,
@@ -62,7 +64,20 @@ export const listPosts = async (req, res, next) => {
 
     return res.status(200).json({
       posts: posts.map((post) => publicPost(post, req.user._id)),
+      caughtUp,
     });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/** POST /api/posts/views  (protected) */
+export const markPostsViewed = async (req, res, next) => {
+  try {
+    const body = req.body || {};
+    const added = await markPostsViewedService(req.user._id, body.postIds ?? body.postId);
+
+    return res.status(200).json({ message: 'Marked as seen.', added });
   } catch (error) {
     next(error);
   }

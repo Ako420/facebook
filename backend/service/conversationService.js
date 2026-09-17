@@ -8,6 +8,7 @@ import {
   announceConversationChange,
   announceRead,
   announceRemoval,
+  announceSeen,
 } from "./conversationEvents.js";
 
 const USER_FIELDS = "name avatarUrl work friendsCount";
@@ -342,11 +343,16 @@ export const markReadService = async (conversationId, userId) => {
   const conversation = await requireConversation(conversationId);
   const membership = await requireMembership(conversation._id, userId);
 
+  const now = new Date();
   membership.unreadCount = 0;
-  membership.lastReadAt = new Date();
+  membership.lastReadAt = now;
+  if (!membership.lastDeliveredAt || membership.lastDeliveredAt < now) {
+    membership.lastDeliveredAt = now;
+  }
   await membership.save();
 
   await announceRead(conversation._id, userId);
+  await announceSeen(conversation._id, userId, now);
 
   return membership;
 };

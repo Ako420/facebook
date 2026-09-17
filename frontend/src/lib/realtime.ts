@@ -11,7 +11,7 @@ const MAX_DELAY_MS = 30_000;
 const REMEMBERED_EVENT_IDS = 500;
 
 export const realtimeUrl = () => {
-  const url = new URL(api.defaults.baseURL ?? "http://localhost:3000/api");
+  const url = new URL(api.defaults.baseURL ?? "http://localhost:5000/api");
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
   url.pathname = "/ws";
   url.search = "";

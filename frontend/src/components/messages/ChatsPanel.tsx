@@ -5,7 +5,7 @@ import { Avatar } from "../ui/Avatar";
 import { formatRelativeTime } from "../../lib/format";
 import { cn } from "../../lib/cn";
 import { photo } from "../../data";
-import { previewOf } from "../../features/messages/messageApi";
+import { previewOf, receiptFor } from "../../features/messages/messageApi";
 import type { ApiConversation } from "../../features/messages/messageApi";
 import { useMessages } from "../../features/messages/MessagesProvider";
 import { useAuth } from "../../features/auth/AuthContext";
@@ -40,6 +40,9 @@ export function ConversationRow({
       : undefined;
   const presence = usePresence(other?.user.id);
 
+  const last = conversation.lastMessage;
+  const receipt = last?.fromViewer ? receiptFor(conversation, last.sentAt, account?.id ?? "") : null;
+
   return (
     <button
       onClick={onOpen}
@@ -70,10 +73,15 @@ export function ConversationRow({
             unread ? "font-semibold text-ink" : "text-ink-muted",
           )}
         >
-          {previewOf(conversation)}
-          {conversation.lastMessage && (
-            <> · {formatRelativeTime(conversation.lastMessage.sentAt)}</>
+          {receipt && (
+            <Icon
+              name={receipt === "sent" ? "check" : "check-double"}
+              size={10}
+              className={cn("mr-1 inline", receipt === "read" ? "text-brand" : "text-ink-faint")}
+            />
           )}
+          {previewOf(conversation)}
+          {last && <> · {formatRelativeTime(last.sentAt)}</>}
         </span>
       </span>
 

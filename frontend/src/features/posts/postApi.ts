@@ -30,6 +30,14 @@ export interface ApiPost {
   groupId?: string | null;
   createdAt: string;
   author: { id: string; name?: string; avatarUrl?: string };
+  /** True when this person has already had it in front of them. */
+  seen?: boolean;
+}
+
+export interface PostFeed {
+  posts: ApiPost[];
+  /** True once the feed has run out of new posts and started repeating. */
+  caughtUp: boolean;
 }
 
 export const uploadMedia = async (
@@ -71,9 +79,16 @@ export const listPosts = async (params?: {
   userId?: string;
   type?: "post" | "reel";
   groupId?: string;
+  limit?: number;
 }) => {
-  const { data } = await api.get<{ posts: ApiPost[] }>("/posts", { params });
-  return data.posts;
+  const { data } = await api.get<PostFeed>("/posts", { params });
+  return data;
+};
+
+/** Tells the server which posts have been seen, so the next load brings new ones. */
+export const markPostsViewed = async (postIds: string[]) => {
+  const { data } = await api.post<{ added: number }>("/posts/views", { postIds });
+  return data.added;
 };
 
 export const getPost = async (id: string) => {

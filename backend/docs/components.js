@@ -110,6 +110,10 @@ export const schemas = {
         nullable: true,
         description: 'Set when the post belongs to a group; null for the main feed.',
       },
+      seen: {
+        type: 'boolean',
+        description: 'True when this viewer has already had it in front of them.',
+      },
       createdAt: { type: 'string', format: 'date-time' },
       author: { $ref: '#/components/schemas/Author' },
     },
@@ -255,11 +259,19 @@ export const schemas = {
         description: 'Only meaningful in a group chat.',
       },
       joinedAt: { type: 'string', format: 'date-time' },
+      lastDeliveredAt: {
+        type: 'string',
+        format: 'date-time',
+        nullable: true,
+        description:
+          'How far a message reached one of their open tabs. Compare it with the createdAt '
+          + 'of a message for the second tick.',
+      },
       lastReadAt: {
         type: 'string',
         format: 'date-time',
         nullable: true,
-        description: 'How far this person has read — use it to show read receipts.',
+        description: 'How far this person has read — the blue ticks.',
       },
       user: { $ref: '#/components/schemas/Person' },
     },

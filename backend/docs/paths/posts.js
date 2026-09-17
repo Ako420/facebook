@@ -15,7 +15,11 @@ export const postPaths = {
       tags: ['Posts'],
       summary: 'List posts or reels',
       description:
-        'Newest first. A reel is a post with type "reel", so the same endpoint serves both feeds.',
+        'Newest first, except that anything you have already seen moves to the back, the '
+        + 'one you saw longest ago first. So a reload brings posts you have not seen yet, and '
+        + 'once you have seen everything the feed repeats instead of running dry.\n\n'
+        + 'Tell the server what has been seen with POST /posts/views. A reel is a post with '
+        + 'type "reel", so the same endpoint serves both feeds.',
       parameters: [
         {
           name: 'type',
@@ -48,6 +52,10 @@ export const postPaths = {
           type: 'object',
           properties: {
             posts: { type: 'array', items: { $ref: '#/components/schemas/Post' } },
+            caughtUp: {
+              type: 'boolean',
+              description: 'True once the page contains posts you have already seen.',
+            },
           },
         }),
         401: { $ref: '#/components/responses/Unauthorized' },
@@ -87,6 +95,38 @@ export const postPaths = {
           properties: {
             message: { type: 'string', example: 'Post published.' },
             post: { $ref: '#/components/schemas/Post' },
+          },
+        }),
+        400: { $ref: '#/components/responses/ValidationError' },
+        401: { $ref: '#/components/responses/Unauthorized' },
+      },
+    },
+  },
+
+  '/posts/views': {
+    post: {
+      tags: ['Posts'],
+      summary: 'Mark posts as seen',
+      description:
+        'Send the ids of posts or reels that have been in front of the viewer, at most 50 at '
+        + 'a time. Sending the same id twice is harmless. Seen posts sink to the bottom of the '
+        + 'next feed load.',
+      requestBody: {
+        required: true,
+        content: json({
+          type: 'object',
+          required: ['postIds'],
+          properties: {
+            postIds: { type: 'array', maxItems: 50, items: { type: 'string' } },
+          },
+        }),
+      },
+      responses: {
+        200: ok('Recorded.', {
+          type: 'object',
+          properties: {
+            message: { type: 'string', example: 'Marked as seen.' },
+            added: { type: 'integer', description: 'How many were new.', example: 3 },
           },
         }),
         400: { $ref: '#/components/responses/ValidationError' },

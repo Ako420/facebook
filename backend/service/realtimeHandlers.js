@@ -1,5 +1,5 @@
 import { onClientMessage, onPresenceChange, setTopicAuthorizer } from "../lib/realtime.js";
-import { relayTyping } from "./conversationEvents.js";
+import { catchUpDeliveries, relayTyping } from "./conversationEvents.js";
 import { postIdFromTopic } from "./postEvents.js";
 import { getPostService } from "./postService.js";
 import { announcePresence } from "./presenceService.js";
@@ -16,7 +16,10 @@ const canViewPost = async (postId, userId) => {
 export const registerRealtimeHandlers = () => {
   onClientMessage("typing", (user, message) => relayTyping(message.conversationId, user));
 
-  onPresenceChange(announcePresence);
+  onPresenceChange(async (userId, online) => {
+    await announcePresence(userId, online);
+    if (online) await catchUpDeliveries(userId);
+  });
 
   setTopicAuthorizer((topic, userId) => {
     const postId = postIdFromTopic(topic);
