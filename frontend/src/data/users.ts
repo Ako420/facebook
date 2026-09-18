@@ -111,10 +111,10 @@ export const users = {
   }),
 } satisfies Record<string, User>;
 
-/** The signed-in account. Everything "yours" hangs off this. */
+
 export const currentUser: User = users.aarav;
 
-/** Everyone except the current user. */
+
 export const people: User[] = Object.values(users).filter(
   (u) => u.id !== currentUser.id,
 );
@@ -122,7 +122,7 @@ export const people: User[] = Object.values(users).filter(
 export const userById = (id: ID): User | undefined =>
   Object.values(users).find((u) => u.id === id);
 
-/** Narrows a User down to the shape posts, stories and reels carry. */
+
 export const asAuthor = (user: User): Author => ({
   id: user.id,
   name: user.name,

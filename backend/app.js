@@ -18,6 +18,7 @@ import { registerRealtimeHandlers } from './service/realtimeHandlers.js';
 import helmet from 'helmet';
 import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from './docs/index.js';
+import { allowedOrigins, isAllowedOrigin, corsOptions } from './config/origins.js';
 
 
 const app = express();
@@ -28,12 +29,9 @@ const PORT = process.env.PORT || 5000
 
 
 
-const allowedOrigins = (process.env.CLIENT_URL || 'http://localhost:5173')
-    .split(',')
-    .map((origin) => origin.trim())
-    .filter(Boolean);
+app.use(cors(corsOptions));
 
-app.use(cors({ origin: allowedOrigins, methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'] }));
+app.get('/health', (req, res) => res.json({ ok: true, origins: allowedOrigins }));
 
 app.use(express.json());
 
@@ -64,7 +62,7 @@ const start = async () => {
 
        const server = http.createServer(app);
        registerRealtimeHandlers();
-       const realtime = await attachRealtime(server, { allowedOrigins });
+       const realtime = await attachRealtime(server, { isAllowedOrigin });
 
        server.listen(PORT, ()=>{
             console.log(`Server running at http://localhost:${PORT}`);

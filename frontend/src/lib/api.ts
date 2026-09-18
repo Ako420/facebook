@@ -2,9 +2,13 @@ import axios from "axios";
 import type { AxiosError } from "axios";
 
 const apiUrl = import.meta.env.VITE_API_URL;
+
+if (!apiUrl && !import.meta.env.DEV) {
+  console.error("VITE_API_URL is not set for this deployment, so every request will fail.");
+}
 const TOKEN_KEY = "fb.token";
 
-/** The JWT lives in localStorage so a refresh keeps you signed in for the 7d it lasts. */
+/** The JWT lives in localStorage so a refresh keeps you signed in. */
 export const readToken = (): string | null => {
   try {
     return window.localStorage.getItem(TOKEN_KEY);
@@ -23,7 +27,7 @@ export const writeToken = (token: string | null) => {
 };
 
 export const api = axios.create({
-  baseURL:apiUrl || "http://localhost:5000/api",
+  baseURL: apiUrl || "http://localhost:5000/api",
   headers: { "Content-Type": "application/json" },
 });
 

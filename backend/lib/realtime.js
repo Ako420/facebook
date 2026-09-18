@@ -251,7 +251,7 @@ const startHeartbeat = () =>
     }
   }, HEARTBEAT_MS);
 
-export const attachRealtime = async (server, { allowedOrigins = [] } = {}) => {
+export const attachRealtime = async (server, { isAllowedOrigin = () => true } = {}) => {
   bus = await createBus();
   await bus.start(deliver);
 
@@ -266,7 +266,7 @@ export const attachRealtime = async (server, { allowedOrigins = [] } = {}) => {
     }
 
     const { origin } = request.headers;
-    if (origin && !allowedOrigins.includes(origin)) {
+    if (origin && !isAllowedOrigin(origin)) {
       refuseUpgrade(socket, 403, 'Forbidden');
       return;
     }
