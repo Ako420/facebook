@@ -65,8 +65,7 @@ export default function ProfilePage() {
   }, [backendId]);
 
  
-  // Someone else's profile is fetched in full so their bio, work and friend
-  // count are real rather than guessed from their posts.
+ 
   useEffect(() => {
     if (isSelf || !isBackendId(id)) {
       setViewed(null);

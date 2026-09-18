@@ -1,8 +1,8 @@
 import { useState } from "react";
-import type { User } from "../../data";
 import { PhotoUploadButton } from "./PhotoUploadButton";
 import { EditProfileModal } from "./EditProfileModal";
 import { formatCount } from "../../lib/format";
+import { User } from "../../data";
 import { Icon, VerifiedBadge } from "../icons/Icon";
 import type { IconName } from "../icons/Icon";
 import { Avatar } from "../ui/Avatar";
@@ -32,7 +32,7 @@ export function ProfileHeader({
   friendFaces = [],
   busy = false,
 }: {
-  user: User;
+  user:User;
   isSelf: boolean;
   tab: ProfileTab;
   onTab: (tab: ProfileTab) => void;
@@ -51,8 +51,8 @@ export function ProfileHeader({
       <div className="mx-auto w-full max-w-[59rem] px-4">
         <div className="relative">
           <img
-            src={user.cover}
-            alt={`${user.name} cover`}
+            src="/assets/images/blank-profile-picture.webp"
+            alt='profile picture cover'
             className="h-40 w-full rounded-b-card bg-surface-raised object-cover sm:h-56 lg:h-[21rem]"
           />
           {isSelf && (
@@ -68,8 +68,8 @@ export function ProfileHeader({
         <div className="flex flex-col items-center gap-3 pb-3 md:flex-row md:items-end md:gap-5">
           <div className="relative -mt-10 md:-mt-8">
             <Avatar
-              src={user.avatar}
-              alt={user.name}
+              src="/assets/images/blank-profile-picture.webp"
+              alt='profile picture cover'
               size={168}
               className="rounded-pill border-4 border-surface"
             />
