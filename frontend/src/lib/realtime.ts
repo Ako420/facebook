@@ -10,8 +10,13 @@ const BASE_DELAY_MS = 1_000;
 const MAX_DELAY_MS = 30_000;
 const REMEMBERED_EVENT_IDS = 500;
 
+
 export const realtimeUrl = () => {
-  const url = new URL(api.defaults.baseURL ?? "http://localhost:5000/api");
+  const explicit = import.meta.env.VITE_WS_URL;
+  if (explicit) return explicit;
+
+  const base = api.defaults.baseURL ?? "http://localhost:5000/api";
+  const url = new URL(base, typeof window === "undefined" ? undefined : window.location.origin);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
   url.pathname = "/ws";
   url.search = "";
@@ -29,6 +34,8 @@ export interface RealtimeClient {
   stop: () => void;
   on: (type: string, listener: Listener) => () => void;
   onStatus: (listener: (status: RealtimeStatus) => void) => () => void;
+  /** Skips the rest of the backoff, e.g. once the REST API answers again. */
+  retryNow: () => void;
   send: (message: { type: string } & Record<string, unknown>) => void;
   subscribe: (topic: string) => () => void;
 }
@@ -82,6 +89,10 @@ export function createRealtimeClient(getToken: () => string | null): RealtimeCli
 
   const scheduleRetry = () => {
     if (!running || halted || retryTimer) return;
+
+    // A hidden tab retrying in the background wakes a host that sleeps, for
+    // nobody's benefit. Coming back to the tab reconnects immediately.
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
 
     const ceiling = Math.min(MAX_DELAY_MS, BASE_DELAY_MS * 2 ** attempt);
     const delay = ceiling / 2 + Math.random() * (ceiling / 2);
@@ -196,6 +207,8 @@ export function createRealtimeClient(getToken: () => string | null): RealtimeCli
     },
 
     send,
+
+    retryNow: reconnectNow,
 
     subscribe(topic) {
       const count = topics.get(topic) ?? 0;

@@ -3,7 +3,8 @@ import express from 'express';
 import cors from 'cors';
 import 'dotenv/config.js';
 import {notFound, errorHandler} from './middleware/errorHandler.js';
-import { connectDB } from './config/db.js';
+import mongoose from 'mongoose';
+import { connectDBWithRetry } from './config/db.js';
 import authRouter from './router/auth.js'
 import uploadRouter from './router/upload.js'
 import postRouter from './router/post.js'
@@ -31,7 +32,16 @@ const PORT = process.env.PORT || 5000
 
 app.use(cors(corsOptions));
 
-app.get('/health', (req, res) => res.json({ ok: true, origins: allowedOrigins }));
+app.get('/', (req, res) => res.json({ ok: true }));
+
+app.get('/health', (req, res) =>
+  res.json({
+    ok: true,
+    db: mongoose.connection.readyState === 1 ? 'connected' : 'connecting',
+    uptime: Math.round(process.uptime()),
+    origins: allowedOrigins,
+  }),
+);
 
 app.use(express.json());
 
@@ -56,23 +66,26 @@ app.use('/api/notifications',notificationRouter);
 app.use(notFound);
 app.use(errorHandler);
 
+/**
+ * The port opens first. A cold start on a host that sleeps is slow enough
+ * without waiting for the database handshake before accepting anything, and
+ * requests that arrive early wait for the connection rather than failing.
+ */
 const start = async () => {
-    try {
-       await connectDB();
+    const server = http.createServer(app);
 
-       const server = http.createServer(app);
-       registerRealtimeHandlers();
-       const realtime = await attachRealtime(server, { isAllowedOrigin });
+    server.listen(PORT, () => {
+        console.log(`Server running at http://localhost:${PORT}`);
+    });
 
-       server.listen(PORT, ()=>{
-            console.log(`Server running at http://localhost:${PORT}`);
+    registerRealtimeHandlers();
+    attachRealtime(server, { isAllowedOrigin })
+        .then((realtime) => {
             console.log(`Realtime at ws://localhost:${PORT}${REALTIME_PATH} (${realtime.bus} bus)`);
         })
-    } catch (error) {;
-      console.error('Failed to start server:', error.message);
-     process.exit(1); 
-        
-    }
+        .catch((error) => console.error('Realtime failed to start:', error.message));
+
+    connectDBWithRetry();
 };
 
 

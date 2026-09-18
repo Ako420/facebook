@@ -10,6 +10,7 @@
     "start": "node app.js",
     "dev": "nodemon app.js",
     "test": "echo \"Error: no test specified\" && exit 1",
+    "indexes": "node scripts/sync-indexes.js",
     "seed": "node scripts/seed.js",
     "backfill:groups": "node scripts/backfill-group-member-status.js",
     "sweep:uploads": "node scripts/sweep-uploads.js",

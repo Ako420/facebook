@@ -20,6 +20,10 @@ import type { AuthUser, LoginBody, ProfilePatch, RegisterBody } from "./authApi"
 
 type Status = "loading" | "authenticated" | "guest";
 
+/** How long to keep waiting for a sleeping server before showing the login page. */
+const BOOTSTRAP_PATIENCE_MS = 90_000;
+const BOOTSTRAP_RETRY_MS = 3_000;
+
 interface AuthValue {
   status: Status;
   user: AuthUser | null;
@@ -46,21 +50,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     if (!readToken()) return;
 
-    fetchCurrentUser()
-      .then((me) => {
-        setUser(me);
-        setStatus("authenticated");
-      })
-      .catch((error) => {
-        // Only a rejected token means signed out. A rate limit, a server
-        // error or a dropped connection must not throw the session away.
-        const status = (error as { response?: { status?: number } })?.response?.status;
-        const rejected = status === 401 || status === 403;
+    const deadline = Date.now() + BOOTSTRAP_PATIENCE_MS;
 
-        if (rejected) writeToken(null);
-        setUser(null);
-        setStatus("guest");
-      });
+    // No cleanup cancels this: the loop stops on success, on a rejected token,
+    // when the session is dropped elsewhere, or at the deadline. Cancelling it
+    // would leave nothing running after StrictMode's remount in development.
+    const attempt = () => {
+      if (!readToken()) return;
+
+      fetchCurrentUser()
+        .then((me) => {
+          setUser(me);
+          setStatus("authenticated");
+        })
+        .catch((error) => {
+          // Only a rejected token means signed out. A rate limit, a server
+          // error or a dropped connection must not throw the session away.
+          const status = (error as { response?: { status?: number } })?.response?.status;
+          const rejected = status === 401 || status === 403;
+
+          if (rejected) writeToken(null);
+
+          // A sleeping backend answers nothing at all for a while. Keep the
+          // splash up and keep asking rather than showing the login page to
+          // someone who is already signed in.
+          if (!rejected && !status && Date.now() < deadline) {
+            setTimeout(attempt, BOOTSTRAP_RETRY_MS);
+            return;
+          }
+
+          setUser(null);
+          setStatus("guest");
+        });
+    };
+
+    attempt();
   }, []);
 
   const adopt = useCallback((token: string, nextUser: AuthUser) => {

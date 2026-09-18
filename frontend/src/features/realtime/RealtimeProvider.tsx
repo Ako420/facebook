@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { readToken } from "../../lib/api";
+import { isServerReachable, readToken, subscribeServerReach } from "../../lib/api";
 import { createRealtimeClient } from "../../lib/realtime";
 import type { RealtimeClient, RealtimeStatus } from "../../lib/realtime";
 import type { ApiMessage, ReceiptUpdate } from "../messages/messageApi";
@@ -47,6 +47,15 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
       offStatus();
       client.stop();
     };
+  }, [client]);
+
+  useEffect(() => {
+    let previous = isServerReachable();
+
+    return subscribeServerReach((next) => {
+      if (next && !previous) client.retryNow();
+      previous = next;
+    });
   }, [client]);
 
   const value = useMemo(() => ({ status, client }), [status, client]);
