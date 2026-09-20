@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { Reel } from "../../data";
+import type { Reel } from "../../lib/types";
 import { formatCount, formatRelativeTime } from "../../lib/format";
 import { Icon, VerifiedBadge } from "../icons/Icon";
 import type { IconName } from "../icons/Icon";

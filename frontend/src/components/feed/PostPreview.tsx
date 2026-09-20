@@ -1,4 +1,4 @@
-import type { MediaItem } from "../../data";
+import type { MediaItem } from "../../lib/types";
 import { Icon } from "../icons/Icon";
 import type { IconName } from "../icons/Icon";
 import { Avatar } from "../ui/Avatar";

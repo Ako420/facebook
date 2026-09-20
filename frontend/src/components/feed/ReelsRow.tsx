@@ -6,7 +6,7 @@ import { cn } from "../../lib/cn";
 import { formatCount } from "../../lib/format";
 import { toApiFailure } from "../../lib/api";
 import { listPosts, toReel } from "../../features/posts/postApi";
-import type { Reel } from "../../data";
+import type { Reel } from "../../lib/types";
 
 const CARD = "relative h-56 w-32 shrink-0 overflow-hidden rounded-media";
 

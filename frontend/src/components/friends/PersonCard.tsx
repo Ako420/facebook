@@ -1,4 +1,4 @@
-import type { User } from "../../data";
+import type { User } from "../../lib/types";
 import { formatRelativeTime } from "../../lib/format";
 import { useNavigate } from "react-router-dom";
 import { cn } from "../../lib/cn";

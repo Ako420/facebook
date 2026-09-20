@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { currentUser } from "../../data";
 import { formatRelativeTime } from "../../lib/format";
 import { toApiFailure } from "../../lib/api";
 import { Icon } from "../icons/Icon";
@@ -14,7 +13,7 @@ import {
 } from "../../features/posts/engagementApi";
 import type { ApiComment } from "../../features/posts/engagementApi";
 import { useRealtimeEvent, useRealtimeTopic } from "../../features/realtime/RealtimeProvider";
-import { avatar } from "../../data";
+import { avatarOf } from "../../lib/images";
 
 /** Stable stand-in face for an account with no photo of its own. */
 const seedFrom = (id: string) => {
@@ -23,8 +22,7 @@ const seedFrom = (id: string) => {
   return hash;
 };
 
-const faceFor = (author: ApiComment["author"]) =>
-  author.avatarUrl || avatar(seedFrom(author.id));
+const faceFor = (author: ApiComment["author"]) => avatarOf(author.avatarUrl);
 
 function CommentRow({
   comment,
@@ -186,7 +184,7 @@ export function LiveCommentThread({
     <div className="flex flex-col gap-3 px-gutter pb-3">
       <div className="flex items-center gap-2">
         <Avatar
-          src={user?.avatarUrl || currentUser.avatar}
+          src={avatarOf(user?.avatarUrl)}
           alt={user?.name ?? "You"}
           size={32}
         />

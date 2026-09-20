@@ -149,6 +149,12 @@ export const schemas = {
                 nullable: true,
                 description: 'Accepted friends only.',
               },
+              birthday: {
+                type: 'string',
+                nullable: true,
+                example: '04-21',
+                description: 'Month and day only, for accepted friends. Never the year.',
+              },
             },
           },
         ],

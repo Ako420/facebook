@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { Post, ReactionCounts, ReactionType } from "../../data";
+import type { Post, ReactionCounts, ReactionType } from "../../lib/types";
 import { formatCount, formatRelativeTime } from "../../lib/format";
 import { Icon, VerifiedBadge } from "../icons/Icon";
 import type { IconName } from "../icons/Icon";

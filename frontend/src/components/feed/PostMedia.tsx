@@ -1,4 +1,4 @@
-import type { LinkPreview, MediaItem } from "../../data";
+import type { LinkPreview, MediaItem } from "../../lib/types";
 import { cn } from "../../lib/cn";
 
 function Frame({ item, className }: { item: MediaItem; className?: string }) {

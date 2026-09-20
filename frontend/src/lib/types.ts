@@ -2,9 +2,7 @@
 
 export type ID = string;
 
-
 export type ISODate = string;
-
 
 export interface User {
   id: ID;
@@ -24,18 +22,6 @@ export interface User {
   isFriend: boolean;
 }
 
-export interface Page {
-  id: ID;
-  name: string;
-  handle: string;
-  avatar: string;
-  cover: string;
-  category: string;
-  followerCount: number;
-  unreadCount: number;
-  isVerified: boolean;
-}
-
 export interface Author {
   id: ID;
   name: string;
@@ -43,8 +29,6 @@ export interface Author {
   isVerified: boolean;
   kind: "user" | "page";
 }
-
-
 
 export interface MediaItem {
   type: "image" | "video";
@@ -136,66 +120,9 @@ export interface Reel {
 
 /* ---- Friends ------------------------------------------------------------- */
 
-export interface FriendRequest {
-  id: ID;
-  user: User;
-  sentAt: ISODate;
-  mutualFriendCount: number;
-}
-
 /* ---- Messages ------------------------------------------------------------ */
 
-export type MessageStatus = "sending" | "sent" | "delivered" | "read";
-
-export interface Message {
-  id: ID;
-  conversationId: ID;
-  senderId: ID;
-  text: string;
-  media?: MediaItem;
-  createdAt: ISODate;
-  status: MessageStatus;
-  /** Emoji reactions keyed by the user who left them */
-  reactions?: Record<ID, string>;
-}
-
-export interface Conversation {
-  id: ID;
-  isGroup: boolean;
-  /** Group chats only — 1:1 chats take their title from the other person */
-  name?: string;
-  avatar?: string;
-  participantIds: ID[];
-  messages: Message[];
-  unreadCount: number;
-  isMuted: boolean;
-  isTyping: boolean;
-}
-
 /* ---- Notifications ------------------------------------------------------- */
-
-export type NotificationType =
-  | "reaction"
-  | "comment"
-  | "mention"
-  | "friend-request"
-  | "friend-accepted"
-  | "birthday"
-  | "group"
-  | "event"
-  | "memory"
-  | "page";
-
-export interface AppNotification {
-  id: ID;
-  type: NotificationType;
-  actor: Author;
-  /** Sentence that follows the actor's name */
-  body: string;
-  href: string;
-  createdAt: ISODate;
-  isRead: boolean;
-}
 
 /* ---- Groups & marketplace ------------------------------------------------ */
 
@@ -211,20 +138,6 @@ export interface Group {
   isJoined: boolean;
 }
 
-export interface Listing {
-  id: ID;
-  title: string;
-  /** Stored in cents to keep the arithmetic exact */
-  priceCents: number;
-  currency: string;
-  category: string;
-  location: string;
-  image: string;
-  sellerId: ID;
-  postedAt: ISODate;
-  isSaved: boolean;
-}
-
 /* ---- Navigation ---------------------------------------------------------- */
 
 export interface NavItem {
@@ -236,11 +149,3 @@ export interface NavItem {
   badge?: number;
 }
 
-export interface Shortcut {
-  id: ID;
-  label: string;
-  /** Two-letter fallback shown when there is no image */
-  initials: string;
-  image?: string;
-  href: string;
-}

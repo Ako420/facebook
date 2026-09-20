@@ -4,7 +4,7 @@ import { Icon } from "../icons/Icon";
 import { Avatar } from "../ui/Avatar";
 import { formatRelativeTime } from "../../lib/format";
 import { cn } from "../../lib/cn";
-import { photo } from "../../data";
+import { avatarOf } from "../../lib/images";
 import { previewOf, receiptFor } from "../../features/messages/messageApi";
 import type { ApiConversation } from "../../features/messages/messageApi";
 import { useMessages } from "../../features/messages/MessagesProvider";
@@ -20,8 +20,7 @@ const filters: { id: Filter; label: string }[] = [
 ];
 
 
-export const chatAvatar = (conversation: ApiConversation) =>
-  conversation.avatarUrl || photo(`chat-${conversation.id}`, 96, 96);
+export const chatAvatar = (conversation: ApiConversation) => avatarOf(conversation.avatarUrl);
 
 export function ConversationRow({
   conversation,

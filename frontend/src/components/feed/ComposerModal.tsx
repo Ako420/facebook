@@ -5,7 +5,7 @@ import { Avatar } from "../ui/Avatar";
 import { useUploads } from "../../features/uploads/UploadsProvider";
 import { cn } from "../../lib/cn";
 import { PostPreview } from "./PostPreview";
-import type { MediaItem } from "../../data";
+import type { MediaItem } from "../../lib/types";
 
 /** MAX_FILES / MAX_VIDEO_BYTES / MAX_IMAGE_BYTES in the backend. */
 const MAX_FILES = 6;

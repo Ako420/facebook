@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import type { Post } from "../data";
+import type { Post } from "../lib/types";
 import { PostCard } from "../components/feed/PostCard";
 import { Icon } from "../components/icons/Icon";
 import { Card } from "../components/ui/Card";

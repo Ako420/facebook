@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { currentUser, headerActions } from "../../data";
+import { headerActions } from "../../lib/navigation";
+import { avatarOf } from "../../lib/images";
 import { Icon } from "../icons/Icon";
 import type { IconName } from "../icons/Icon";
 import { Avatar } from "../ui/Avatar";
@@ -70,9 +71,9 @@ export function Header() {
   }, [panel]);
 
   const me = {
-    id: account?.id ?? currentUser.id,
-    name: account?.name ?? currentUser.name,
-    avatar: account?.avatarUrl || currentUser.avatar,
+    id: account?.id ?? "",
+    name: account?.name ?? "You",
+    avatar: avatarOf(account?.avatarUrl),
   };
 
   return (

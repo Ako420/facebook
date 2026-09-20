@@ -1,5 +1,5 @@
 import { api } from "../../lib/api";
-import type { ReactionType } from "../../data";
+import type { ReactionType } from "../../lib/types";
 
 /* ---- Comments ------------------------------------------------------------ */
 

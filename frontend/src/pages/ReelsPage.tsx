@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { currentUser } from "../data";
+import { avatarOf } from "../lib/images";
 import { useAuth } from "../features/auth/AuthContext";
 import { listPosts, toReel } from "../features/posts/postApi";
 import type { ApiPost } from "../features/posts/postApi";
@@ -37,8 +37,8 @@ export default function ReelsPage() {
   });
 
   const author = {
-    name: user?.name ?? currentUser.name,
-    avatar: user?.avatarUrl || currentUser.avatar,
+    name: user?.name ?? "You",
+    avatar: avatarOf(user?.avatarUrl),
   };
 
   const list = mine.map(toReel);

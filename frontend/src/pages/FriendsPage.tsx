@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { birthdaysToday } from "../data";
 import { FriendsSidebar } from "../components/friends/FriendsSidebar";
 import { PersonCard, RequestCard } from "../components/friends/PersonCard";
 import { Icon } from "../components/icons/Icon";
@@ -9,6 +8,7 @@ import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { useNavigate } from "react-router-dom";
 import { toApiFailure } from "../lib/api";
 import {
+  isBirthdayToday,
   listFriends,
   listSuggestions,
   removeFriend,
@@ -62,6 +62,10 @@ export default function FriendsPage() {
     { edge: FriendEdge; kind: "unfriend" | "decline" | "cancel" } | null
   >(null);
   const [busy, setBusy] = useState(false);
+
+  const birthdayFriends = friends
+    .filter((edge) => isBirthdayToday(edge.user.birthday))
+    .map((edge) => toPerson(edge.user));
 
   const load = useCallback(async () => {
     try {
@@ -168,7 +172,11 @@ export default function FriendsPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-shell">
-      <FriendsSidebar selected={selected} onSelect={setSelected} />
+      <FriendsSidebar
+        selected={selected}
+        onSelect={setSelected}
+        requestCount={incoming.length}
+      />
 
       <main className="min-w-0 flex-1 px-4 py-4">
         {error && (
@@ -244,11 +252,14 @@ export default function FriendsPage() {
               )}
             </Section>
 
-            {/* Birthdays still come from the sample data — the API has no
-                date-of-birth query behind it yet. */}
-            <Section title="Birthdays">
+                        <Section title="Birthdays">
               <ul className="flex flex-col gap-1 rounded-card bg-surface p-2 shadow-card">
-                {birthdaysToday.map((user) => (
+                {birthdayFriends.length === 0 && (
+                  <li className="px-2 py-1.5 text-sm text-ink-muted">
+                    No birthdays today.
+                  </li>
+                )}
+                {birthdayFriends.map((user) => (
                   <li key={user.id}>
                     <button
                       onClick={() => navigate(`/profile/${user.id}`)}

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { composerPrompt, currentUser } from "../../data";
+import { avatarOf } from "../../lib/images";
 import { Icon } from "../icons/Icon";
 import type { IconName } from "../icons/Icon";
 import { Avatar } from "../ui/Avatar";
@@ -28,8 +28,8 @@ export function Composer({
 
 
   const author = {
-    name: user?.name ?? currentUser.name,
-    avatar: user?.avatarUrl || currentUser.avatar,
+    name: user?.name ?? "You",
+    avatar: avatarOf(user?.avatarUrl),
   };
 
   return (
@@ -41,7 +41,7 @@ export function Composer({
             onClick={() => setOpen(true)}
             className="flex-1 rounded-pill bg-surface-raised px-4 py-2.5 text-left text-[0.95rem] text-ink-muted hover:bg-line"
           >
-            {prompt ?? composerPrompt(author.name.split(" ")[0])}
+            {prompt ?? `What's on your mind, ${author.name.split(" ")[0]}?`}
           </button>
         </div>
 

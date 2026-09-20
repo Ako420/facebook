@@ -1,5 +1,5 @@
 import { api } from "../../lib/api";
-import { photo } from "../../data";
+import { coverOf } from "../../lib/images";
 import type { ApiPerson } from "../friends/friendApi";
 
 
@@ -152,7 +152,7 @@ export const setGroupMemberRole = async (
 
 /** A group with no cover of its own still gets a stable picture. */
 export const groupCover = (group: Pick<ApiGroup, "id" | "coverUrl">, width = 900, height = 400) =>
-  group.coverUrl || photo(`group-${group.id}`, width, height);
+  coverOf(group.coverUrl);
 
 export const describePrivacy = (privacy: ApiGroup["privacy"]) =>
   privacy === "private" ? "Private group" : "Public group";

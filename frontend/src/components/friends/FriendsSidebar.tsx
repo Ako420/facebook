@@ -1,4 +1,3 @@
-import { friendRequests } from "../../data";
 import { Icon } from "../icons/Icon";
 import type { IconName } from "../icons/Icon";
 import { cn } from "../../lib/cn";
@@ -11,21 +10,28 @@ interface Item {
   badge?: number;
 }
 
-const items: Item[] = [
+const items = (requestCount: number): Item[] => [
   { id: "home", label: "Home", icon: "users" },
-  { id: "requests", label: "Friend requests", icon: "user-plus", chevron: true, badge: friendRequests.length },
+  {
+    id: "requests",
+    label: "Friend requests",
+    icon: "user-plus",
+    chevron: true,
+    badge: requestCount || undefined,
+  },
   { id: "suggestions", label: "Suggestions", icon: "user-plus", chevron: true },
   { id: "all", label: "All friends", icon: "users", chevron: true },
   { id: "birthdays", label: "Birthdays", icon: "cake" },
-  { id: "lists", label: "Custom lists", icon: "list", chevron: true },
 ];
 
 export function FriendsSidebar({
   selected,
   onSelect,
+  requestCount = 0,
 }: {
   selected: string;
   onSelect: (id: string) => void;
+  requestCount?: number;
 }) {
   return (
     <aside className="sticky top-header hidden h-[calc(100dvh-var(--spacing-header))] w-sidebar shrink-0 overflow-y-auto bg-surface px-2 py-3 shadow-card md:block">
@@ -40,7 +46,7 @@ export function FriendsSidebar({
       </div>
 
       <nav className="flex flex-col gap-0.5">
-        {items.map((item) => {
+        {items(requestCount).map((item) => {
           const active = selected === item.id;
           return (
             <button

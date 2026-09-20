@@ -9,6 +9,12 @@ const USER_FIELDS = "name avatarUrl work friendsCount";
 
 const same = (a, b) => String(a) === String(b);
 
+const monthDay = (date) => {
+  if (!date) return null;
+  const value = new Date(date);
+  return `${String(value.getUTCMonth() + 1).padStart(2, "0")}-${String(value.getUTCDate()).padStart(2, "0")}`;
+};
+
 const announceFriendsChanged = (friend) =>
   emitToUsers([friend.userId, friend.friendId], "friends:changed", {});
 
@@ -30,8 +36,8 @@ export const getFriendsByUserIdService = async (userId) => {
   const rows = await Friend.find({
     $or: [{ userId }, { friendId: userId }],
   })
-    .populate("userId", `${USER_FIELDS} lastActiveAt`)
-    .populate("friendId", `${USER_FIELDS} lastActiveAt`)
+    .populate("userId", `${USER_FIELDS} lastActiveAt dateOfBirth`)
+    .populate("friendId", `${USER_FIELDS} lastActiveAt dateOfBirth`)
     .sort({ createdAt: -1 })
     .lean();
 
@@ -60,6 +66,7 @@ export const getFriendsByUserIdService = async (userId) => {
 
     if (row.status === "accepted") {
       entry.user.lastActiveAt = other.lastActiveAt ?? null;
+      entry.user.birthday = monthDay(other.dateOfBirth);
       friends.push(entry);
     } else if (row.status === "pending") {
       (sentByMe ? outgoing : incoming).push(entry);

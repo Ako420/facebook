@@ -1,14 +1,10 @@
 import type { ReactNode } from "react";
-import type { User } from "../../data";
-import { friends, photo } from "../../data";
+import type { User } from "../../lib/types";
 import { formatFullDate } from "../../lib/format";
 import { Icon } from "../icons/Icon";
 import type { IconName } from "../icons/Icon";
 import { Card, CardTitle } from "../ui/Card";
 import { useNavigate } from "react-router-dom";
-
-export const profilePhotos = (user: User, count = 9): string[] =>
-  Array.from({ length: count }, (_, index) => photo(`${user.id}-photo-${index}`, 400, 400));
 
 function Detail({ icon, children }: { icon: IconName; children: ReactNode }) {
   return (
@@ -41,12 +37,15 @@ export function IntroCard({ user, isSelf }: { user: User; isSelf: boolean }) {
   );
 }
 
-export function PhotosCard({ user }: { user: User }) {
+export function PhotosCard({ photos }: { photos: string[] }) {
   return (
     <Card className="pb-3">
       <CardTitle title="Photos" action="See all photos" />
       <div className="grid grid-cols-3 gap-1 px-gutter pt-2">
-        {profilePhotos(user).map((src, index) => (
+        {photos.length === 0 && (
+          <p className="col-span-3 py-2 text-sm text-ink-muted">No photos yet.</p>
+        )}
+        {photos.slice(0, 9).map((src, index) => (
           <img
             key={src}
             src={src}
@@ -70,7 +69,7 @@ export interface FriendTile {
 
 export function FriendsCard({ people }: { people?: FriendTile[] }) {
   const navigate = useNavigate();
-  const all: FriendTile[] = people ?? friends;
+  const all: FriendTile[] = people ?? [];
   const list = all.slice(0, 9);
 
   return (

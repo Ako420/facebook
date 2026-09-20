@@ -1,4 +1,4 @@
-import { bottomNav } from "../../data";
+import { bottomNav } from "../../lib/navigation";
 import { Icon } from "../icons/Icon";
 import type { IconName } from "../icons/Icon";
 import { cn } from "../../lib/cn";

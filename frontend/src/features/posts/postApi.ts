@@ -1,9 +1,8 @@
 import { api } from "../../lib/api";
-import { avatar } from "../../data";
-import type { MediaItem, Post, ReactionCounts, ReactionType, Reel } from "../../data";
+import { avatarOf } from "../../lib/images";
+import type { MediaItem, Post, ReactionCounts, ReactionType, Reel } from "../../lib/types";
 import { reactionFromCode } from "./engagementApi";
 import type { ApiReactions } from "./engagementApi";
-
 
 export interface UploadedMedia {
   type: "image" | "video";
@@ -105,14 +104,6 @@ export const deletePost = async (id: string) => {
   await api.delete(`/posts/${id}`);
 };
 
-
-const seedFrom = (id: string) => {
-  let hash = 0;
-  for (let i = 0; i < id.length; i += 1) hash = (hash * 31 + id.charCodeAt(i)) % 997;
-  return hash;
-};
-
-
 /** Turns the server's numeric tallies into the name-keyed map the UI renders. */
 export function toReactionCounts(reactions?: ApiReactions): ReactionCounts {
   const counts: ReactionCounts = {};
@@ -148,7 +139,7 @@ export function toFeedPost(post: ApiPost): Post {
     author: {
       id: post.author.id,
       name: post.author.name ?? "Unknown",
-      avatar: post.author.avatarUrl || avatar(seedFrom(post.author.id)),
+      avatar: avatarOf(post.author.avatarUrl),
       isVerified: false,
       kind: "user",
     },

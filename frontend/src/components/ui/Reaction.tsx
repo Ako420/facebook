@@ -1,4 +1,4 @@
-import type { ReactionType } from "../../data";
+import type { ReactionType } from "../../lib/types";
 import { Icon } from "../icons/Icon";
 import { cn } from "../../lib/cn";
 

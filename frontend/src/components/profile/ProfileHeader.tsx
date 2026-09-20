@@ -2,7 +2,7 @@ import { useState } from "react";
 import { PhotoUploadButton } from "./PhotoUploadButton";
 import { EditProfileModal } from "./EditProfileModal";
 import { formatCount } from "../../lib/format";
-import { User } from "../../data";
+import { User } from "../../lib/types";
 import { Icon, VerifiedBadge } from "../icons/Icon";
 import type { IconName } from "../icons/Icon";
 import { Avatar } from "../ui/Avatar";

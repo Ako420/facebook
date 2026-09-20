@@ -1,8 +1,18 @@
 import { api } from "../../lib/api";
-import { avatar, photo } from "../../data";
-import type { User } from "../../data";
+import { avatarOf, coverOf } from "../../lib/images";
+import type { User } from "../../lib/types";
 
 /** A person as friendController's publicPerson() returns them. */
+/** "MM-DD" for an accepted friend, so a birthday can be spotted without a year. */
+export const isBirthdayToday = (birthday?: string | null) => {
+  if (!birthday) return false;
+
+  const today = new Date();
+  const month = String(today.getMonth() + 1).padStart(2, "0");
+  const day = String(today.getDate()).padStart(2, "0");
+  return birthday === `${month}-${day}`;
+};
+
 export interface ApiPerson {
   id: string;
   name?: string;
@@ -11,6 +21,8 @@ export interface ApiPerson {
   friendsCount?: number;
   online?: boolean;
   lastActiveAt?: string | null;
+  /** Month and day of an accepted friend's birthday, never the year. */
+  birthday?: string | null;
 }
 
 /** One row of the Friend collection, from this viewer's side. */
@@ -58,21 +70,13 @@ export const removeFriend = async (id: string) => {
   await api.delete(`/friend/${id}`);
 };
 
-
-const seedFrom = (id: string) => {
-  let hash = 0;
-  for (let i = 0; i < id.length; i += 1) hash = (hash * 31 + id.charCodeAt(i)) % 997;
-  return hash;
-};
-
-
 export function toPerson(person: ApiPerson): User {
   return {
     id: person.id,
     name: person.name ?? "Unknown",
     username: (person.name ?? "unknown").toLowerCase().replace(/\s+/g, "."),
-    avatar: person.avatarUrl || avatar(seedFrom(person.id)),
-    cover: photo(`${person.id}-cover`, 1200, 400),
+    avatar: avatarOf(person.avatarUrl),
+    cover: coverOf(),
     bio: "",
     location: "",
     work: person.work ?? "",

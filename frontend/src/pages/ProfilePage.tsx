@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { currentUser, userById } from "../data";
+import { avatarOf, coverOf } from "../lib/images";
+import type { User } from "../lib/types";
 import { formatCount } from "../lib/format";
 import { Composer } from "../components/feed/Composer";
 import { usePublishedPosts } from "../features/uploads/UploadsProvider";
@@ -25,7 +26,26 @@ import {
 import type { FriendEdge, FriendLists } from "../features/friends/friendApi";
 
 
-const isBackendId = (value?: string) => Boolean(value && /^[0-9a-f]{24}$/i.test(value));
+const isBackendId = (value?: string): value is string =>
+  Boolean(value && /^[0-9a-f]{24}$/i.test(value));
+
+const unknownProfile = (id: string): User => ({
+  id,
+  name: "Facebook user",
+  username: "",
+  avatar: avatarOf(),
+  cover: coverOf(),
+  bio: "",
+  location: "",
+  work: "",
+  isVerified: false,
+  isOnline: false,
+  lastActiveAt: new Date().toISOString(),
+  joinedAt: new Date().toISOString(),
+  friendCount: 0,
+  mutualFriendCount: 0,
+  isFriend: false,
+});
 
 export default function ProfilePage() {
   const { id } = useParams();
@@ -123,7 +143,7 @@ export default function ProfilePage() {
       if (known) return toPerson(known.user);
     }
 
-    return (id && userById(id)) || currentUser;
+    return unknownProfile(id ?? "");
   }, [isSelf, account, id, lists, viewed]);
 
   // Only your own friend list is reachable, so another profile shows none.
@@ -184,7 +204,7 @@ export default function ProfilePage() {
       <div className="mx-auto grid w-full max-w-[59rem] gap-4 px-4 py-4 lg:grid-cols-[minmax(0,21rem)_minmax(0,1fr)]">
         <div className="flex flex-col gap-4">
           <IntroCard user={user} isSelf={isSelf} />
-          <PhotosCard user={user} />
+          <PhotosCard photos={photos} />
           <FriendsCard people={friendTiles} />
         </div>
 

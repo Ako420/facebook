@@ -1,7 +1,5 @@
-import { birthdaySummary, birthdaysToday, listings } from "../../data";
-import { listFriends, toPerson } from "../../features/friends/friendApi";
+import { isBirthdayToday, listFriends, toPerson } from "../../features/friends/friendApi";
 import type { FriendEdge } from "../../features/friends/friendApi";
-import { formatPrice } from "../../lib/format";
 import { Icon } from "../icons/Icon";
 import { Avatar } from "../ui/Avatar";
 import { useCallback, useEffect, useState } from "react";
@@ -11,7 +9,6 @@ import { useRealtimeEvent } from "../../features/realtime/RealtimeProvider";
 
 export function RightRail() {
   const navigate = useNavigate();
-  const sponsored = listings.slice(0, 2);
   const [contacts, setContacts] = useState<FriendEdge[]>([]);
   const presence = usePresenceMap();
 
@@ -27,6 +24,8 @@ export function RightRail() {
 
   useRealtimeEvent("friends:changed", loadContacts);
 
+  const birthdays = contacts.filter((edge) => isBirthdayToday(edge.user.birthday));
+
   const sortedContacts = [...contacts].sort(
     (a, b) =>
       Number(Boolean(presence.get(b.user.id)?.online)) -
@@ -35,45 +34,29 @@ export function RightRail() {
 
   return (
     <aside className="sticky top-header hidden h-[calc(100dvh-var(--spacing-header))] w-rail shrink-0 overflow-y-auto px-2 py-4 lg:block">
-      <h2 className="px-2 pb-1 text-base font-semibold text-ink-muted">Sponsored</h2>
-      <div className="flex flex-col gap-1">
-        {sponsored.map((listing) => (
+      {birthdays.length > 0 && (
+        <>
+          <h2 className="px-2 pb-1 text-base font-semibold text-ink-muted">Birthdays</h2>
           <button
-            key={listing.id}
-            className="flex items-center gap-3 rounded-lg p-2 text-left hover:bg-surface-hover"
+            onClick={() => navigate(`/profile/${birthdays[0].user.id}`)}
+            className="flex w-full items-start gap-3 rounded-lg p-2 text-left hover:bg-surface-hover"
           >
-            <img
-              src={listing.image}
-              alt={listing.title}
-              loading="lazy"
-              className="size-24 rounded-media bg-surface-raised object-cover"
-            />
-            <span className="min-w-0">
-              <span className="line-clamp-2 block text-sm font-medium text-ink">
-                {listing.title}
-              </span>
-              <span className="block text-xs text-ink-faint">
-                {formatPrice(listing.priceCents, listing.currency)} · {listing.location}
-              </span>
-            </span>
+            <Icon name="gift" size={30} className="text-[#f3425f]" />
+            <p className="text-sm text-ink">
+              <b className="font-semibold">{toPerson(birthdays[0].user).name}</b>
+              {birthdays.length > 1 && (
+                <>
+                  {" and "}
+                  <b className="font-semibold">{birthdays.length - 1} others</b>
+                </>
+              )}
+              {birthdays.length > 1 ? " have birthdays today." : " has a birthday today."}
+            </p>
           </button>
-        ))}
-      </div>
 
-      <hr className="my-3 border-line" />
-
-      <h2 className="px-2 pb-1 text-base font-semibold text-ink-muted">Birthdays</h2>
-      <button className="flex w-full items-start gap-3 rounded-lg p-2 text-left hover:bg-surface-hover">
-        <Icon name="gift" size={30} className="text-[#f3425f]" />
-        <p className="text-sm text-ink">
-          <b className="font-semibold">{birthdaysToday[0]?.name}</b> and{" "}
-          <b className="font-semibold">{birthdaysToday.length - 1} others</b> have birthdays
-          today.
-        </p>
-      </button>
-      <p className="sr-only">{birthdaySummary()}</p>
-
-      <hr className="my-3 border-line" />
+          <hr className="my-3 border-line" />
+        </>
+      )}
 
       <div className="flex items-center justify-between px-2 pb-1">
         <h2 className="text-base font-semibold text-ink-muted">Contacts</h2>
