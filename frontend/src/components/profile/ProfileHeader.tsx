@@ -51,8 +51,8 @@ export function ProfileHeader({
       <div className="mx-auto w-full max-w-[59rem] px-4">
         <div className="relative">
           <img
-            src="/assets/images/blank-profile-picture.webp"
-            alt='profile picture cover'
+            src={user.cover}
+            alt={`${user.name}'s cover photo`}
             className="h-40 w-full rounded-b-card bg-surface-raised object-cover sm:h-56 lg:h-[21rem]"
           />
           {isSelf && (
@@ -68,8 +68,8 @@ export function ProfileHeader({
         <div className="flex flex-col items-center gap-3 pb-3 md:flex-row md:items-end md:gap-5">
           <div className="relative -mt-10 md:-mt-8">
             <Avatar
-              src="/assets/images/blank-profile-picture.webp"
-              alt='profile picture cover'
+              src={user.avatar}
+              alt={user.name}
               size={168}
               className="rounded-pill border-4 border-surface"
             />
