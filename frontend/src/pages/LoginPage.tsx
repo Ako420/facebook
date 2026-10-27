@@ -14,10 +14,10 @@ const validate = (email: string, password: string): FieldErrors => {
   const errors: FieldErrors = {};
   if (!email.trim()) errors.email = "Email is required.";
   if (!password) errors.password = "Password is required.";
-  return errors;
+  return errors;export default function LoginPage() {
+
 };
 
-export default function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
 
