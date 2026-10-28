@@ -22,9 +22,9 @@ type Status = "loading" | "authenticated" | "guest";
 
 /** How long to keep waiting for a sleeping server before showing the login page. */
 const BOOTSTRAP_PATIENCE_MS = 90_000;
-consinterfacet BOOTSTRAP_RETRY_MS = 3_000;
+const BOOTSTRAP_RETRY_MS = 3_000;
 
- AuthValue {
+ interface AuthValue {
   status: Status;
   user: AuthUser | null;
   login: (body: LoginBody) => Promise<AuthUser>;
